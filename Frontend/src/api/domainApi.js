@@ -2,6 +2,16 @@ import { api } from "./axios.js";
 
 // ✅ ADD THIS (so AdminDashboard can import it)
 export const unwrap = (res) => res?.data?.data ?? res?.data;
+const shouldFallbackEndpoint = (err) => {
+  const status = err?.response?.status;
+  const message = String(err?.response?.data?.message || err?.message || "").toLowerCase();
+  const missingEndpointMessage =
+    message.includes("no static resource") ||
+    message.includes("nohandlerfound") ||
+    message.includes("not found");
+
+  return !status || status === 404 || status === 405 || missingEndpointMessage;
+};
 
 // ---------------- CUSTOMER API ----------------
 export const customerApi = {
@@ -12,8 +22,40 @@ export const customerApi = {
   updateMyProfile: (payload) => api.post("/customers/profile", payload),
 
   getById: (customerId) => api.get(`/customers/${customerId}`),
+};
 
-  submitMockKyc: (payload) => api.post("/kyc/mock/submit", payload),
+// ---------------- KYC API ----------------
+export const kycApi = {
+  // Customer actions
+  submit: (payload) => api.post("/kyc/submit", payload),
+  getMyKyc: () => api.get("/kyc/me"),
+
+  // Officer/Admin actions
+  getByStatus: async (status) => {
+    try {
+      return await api.get("/officer/kyc", { params: { status } });
+    } catch (err) {
+      if (!shouldFallbackEndpoint(err)) throw err;
+      // Fallback for environments still exposing admin KYC endpoint
+      return api.get("/admin/kyc", { params: { status } });
+    }
+  },
+  approve: async (kycId, remarks) => {
+    try {
+      return await api.post(`/officer/kyc/${kycId}/approve`, { remarks });
+    } catch (err) {
+      if (!shouldFallbackEndpoint(err)) throw err;
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "APPROVED", remarks });
+    }
+  },
+  reject: async (kycId, remarks) => {
+    try {
+      return await api.post(`/officer/kyc/${kycId}/reject`, { remarks });
+    } catch (err) {
+      if (!shouldFallbackEndpoint(err)) throw err;
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "REJECTED", remarks });
+    }
+  },
 };
 
 // ---------------- PRODUCT API ----------------

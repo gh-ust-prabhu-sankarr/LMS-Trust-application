@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, loanApi, repaymentApi } from "../../api/domainApi.js";
+import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 const money = (n) =>
@@ -10,8 +10,8 @@ const money = (n) =>
 
 const KYC_META = {
   PENDING: { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" },
-  SUBMITTED: { label: "SUBMITTED", cls: "bg-blue-50 text-blue-800 border-blue-200" },
-  VERIFIED: { label: "VERIFIED", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  APPROVED: { label: "APPROVED", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  VERIFIED: { label: "APPROVED", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
   REJECTED: { label: "REJECTED", cls: "bg-rose-50 text-rose-800 border-rose-200" },
 };
 
@@ -30,6 +30,9 @@ export default function UserDashboard() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [kycSubmitting, setKycSubmitting] = useState(false);
+  const [kycError, setKycError] = useState("");
+  const [myKyc, setMyKyc] = useState(null);
   const [editForm, setEditForm] = useState({
     fullName: "",
     phone: "",
@@ -38,11 +41,17 @@ export default function UserDashboard() {
     employmentType: "",
     monthlyIncome: "",
   });
+  const [kycForm, setKycForm] = useState({
+    fullName: "",
+    dob: "",
+    panNumber: "",
+    aadhaarNumber: "",
+  });
 
   const kyc = useMemo(() => {
-    const key = (profile?.kycStatus || "PENDING").toUpperCase();
+    const key = (myKyc?.status || profile?.kycStatus || "PENDING").toUpperCase();
     return KYC_META[key] || KYC_META.PENDING;
-  }, [profile?.kycStatus]);
+  }, [myKyc?.status, profile?.kycStatus]);
 
   const stats = useMemo(() => {
     const draft = myLoans.filter((l) => l.status === "DRAFT").length;
@@ -57,9 +66,11 @@ export default function UserDashboard() {
   const loadBase = async () => {
     setError("");
     try {
+      let profileData = null;
       const [profileRes, loansRes] = await Promise.allSettled([customerApi.getMyProfile(), loanApi.getMyLoans()]);
       if (profileRes.status === "fulfilled") {
         const p = profileRes.value.data;
+        profileData = p;
         setProfile(p);
         setEditForm({
           fullName: p?.fullName || "",
@@ -69,15 +80,35 @@ export default function UserDashboard() {
           employmentType: p?.employmentType || "",
           monthlyIncome: p?.monthlyIncome ?? "",
         });
+        setKycForm((prev) => ({
+          ...prev,
+          fullName: p?.fullName || "",
+          panNumber: p?.panNumber || "",
+        }));
       }
       if (loansRes.status === "fulfilled") setMyLoans(loansRes.value.data || []);
+      try {
+        const myKycRes = await kycApi.getMyKyc();//calls backend kycme.....check alreedy submited or not...
+        const k = myKycRes?.data || null; //  based on this myKyc ?  truee //falss
+        setMyKyc(k);
+        if (k) {
+          setKycForm({
+            fullName: k?.fullName || profileData?.fullName || "",
+            dob: k?.dob || "",
+            panNumber: k?.panNumber || profileData?.panNumber || "",
+            aadhaarNumber: k?.aadhaarNumber || "",
+          });
+        }
+      } catch {
+        setMyKyc(null);
+      }
     } catch (e) {
       setError(e?.response?.data?.message || e?.message || "Failed loading dashboard");
     } finally {
       setLoading(false);
     }
   };
-
+//first....
   useEffect(() => {
     loadBase();
   }, []);
@@ -146,20 +177,31 @@ export default function UserDashboard() {
     }
   };
 
-  const requestMockKyc = async () => {
-    setEditError("");
+  const submitKyc = async () => {
+    setKycError("");
     try {
-      setSaving(true);
-      await customerApi.submitMockKyc({
-        fullName: profile?.fullName || editForm.fullName,
-        phone: profile?.phone || editForm.phone,
-        panNumber: profile?.panNumber || editForm.panNumber,
+      setKycSubmitting(true);//DISABLE BUTTN
+      await kycApi.submit({//submiting calling backendd....sending to create new kyc records
+        fullName: kycForm.fullName?.trim(),
+        dob: kycForm.dob,
+        panNumber: kycForm.panNumber?.trim()?.toUpperCase(),
+        aadhaarNumber: kycForm.aadhaarNumber?.trim(),
       });
       await loadBase();
+      setKycError("");
     } catch (e) {
-      setEditError(e?.response?.data?.message || e?.message || "Mock KYC request failed");
+      const payload = e?.response?.data;//BACKEND SEND ERRR MSGG
+      if (payload?.message) {
+        setKycError(payload.message);//ONE ERRE PANx
+      } else if (payload && typeof payload === "object" && !Array.isArray(payload)) {//TWOR ERRS PAN X AADHAR
+        const validationErrors = payload;
+        const firstMessage = Object.values(validationErrors)[0];
+        setKycError(firstMessage || "KYC validation failed");
+      } else {
+        setKycError(e?.response?.data?.message || e?.message || "KYC submission failed");
+      }
     } finally {
-      setSaving(false);
+      setKycSubmitting(false);
     }
   };
 
@@ -215,7 +257,7 @@ export default function UserDashboard() {
                   <Info label="Employment Type" value={profile?.employmentType || "-"} />
                   <Info label="Monthly Income" value={money(profile?.monthlyIncome)} />
                   <Info label="Credit Score" value={profile?.creditScore ?? "-"} />
-                  <Info label="KYC Status" value={profile?.kycStatus || "PENDING"} />
+                  <Info label="KYC Status" value={myKyc?.status || profile?.kycStatus || "PENDING"} />
                   <Info label="Address" value={profile?.address || "-"} wide />
                 </div>
               ) : (
@@ -279,19 +321,7 @@ export default function UserDashboard() {
                     >
                       {saving ? "Saving..." : "Save Profile"}
                     </button>
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={requestMockKyc}
-                      className="px-4 py-2 rounded-xl border border-slate-300 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-60"
-                    >
-                      {saving ? "Processing..." : "Submit Mock KYC"}
-                    </button>
                   </div>
-
-                  <p className="md:col-span-2 text-xs text-slate-500 mt-1">
-                    Mock KYC will simulate verification. Officer can review later.
-                  </p>
                 </div>
               )}
             </div>
@@ -303,6 +333,75 @@ export default function UserDashboard() {
             <StatCard label="CIBIL Score" value={profile?.creditScore ?? "-"} />
           </div>
         </div>
+      </section>
+
+      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">KYC Verification</h2>
+          <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${kyc.cls}`}>
+            {myKyc?.status || "NOT SUBMITTED"}
+          </span>
+        </div>
+
+        {kycError ? (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{kycError}</div>
+        ) : null}
+
+        {myKyc ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Info label="Full Name" value={myKyc.fullName} />
+            <Info label="Date of Birth" value={myKyc.dob} />
+            <Info label="PAN Number" value={myKyc.panNumber} />
+            <Info label="Aadhaar Number" value={myKyc.aadhaarNumber} />
+            <Info label="Status" value={myKyc.status} />
+            <Info label="Remarks" value={myKyc.remarks || "-"} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="Full Name">
+              <input
+                value={kycForm.fullName}
+                onChange={(e) => setKycForm((p) => ({ ...p, fullName: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </Field>
+            <Field label="Date of Birth (yyyy-MM-dd)">
+              <input
+                type="date"
+                value={kycForm.dob}
+                onChange={(e) => setKycForm((p) => ({ ...p, dob: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </Field>
+            <Field label="PAN Number">
+              <input
+                value={kycForm.panNumber}
+                onChange={(e) => setKycForm((p) => ({ ...p, panNumber: e.target.value.toUpperCase() }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm uppercase"
+                placeholder="ABCDE1234F"
+              />
+            </Field>
+            <Field label="Aadhaar Number (12 digits)">
+              <input
+                value={kycForm.aadhaarNumber}
+                onChange={(e) => setKycForm((p) => ({ ...p, aadhaarNumber: e.target.value }))}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                placeholder="123412341234"
+              />
+            </Field>
+            <div className="md:col-span-2">
+              <button
+                type="button"
+                disabled={kycSubmitting}
+                onClick={submitKyc}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {kycSubmitting ? "Submitting..." : "Submit KYC"}
+              </button>
+              <p className="text-xs text-slate-500 mt-2">After submission, loan officer will approve/reject your KYC.</p>
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -322,7 +421,7 @@ export default function UserDashboard() {
                 <Info label="PAN" value={profile.panNumber} />
                 <Info label="Employment Type" value={profile.employmentType} />
                 <Info label="Income" value={money(profile.monthlyIncome)} />
-                <Info label="KYC" value={profile.kycStatus} />
+                <Info label="KYC" value={myKyc?.status || profile.kycStatus} />
                 <Info label="Credit Score" value={profile.creditScore} />
                 <Info label="Address" value={profile.address} wide />
               </div>
