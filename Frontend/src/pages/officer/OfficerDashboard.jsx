@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { kycApi, unwrap } from "../../api/domainApi.js";//unwrap → extract real data from API response  
+import { fileApi, kycApi, unwrap } from "../../api/domainApi.js";
 
 const KYC_STATUSES = ["PENDING", "APPROVED", "REJECTED"];
 
@@ -86,6 +86,14 @@ export default function OfficerDashboard() {
     }
   };
 
+  const handleFileDownload = async (fileId, fallbackName = "document.pdf") => {
+    try {
+      await fileApi.download(fileId, fallbackName);
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || "File download failed");
+    }
+  };
+
   return (
     <PortalShell title="Credit Officer Portal" subtitle="Review KYC requests">
       {error && (
@@ -145,40 +153,55 @@ export default function OfficerDashboard() {
                     <div className="text-xs text-slate-500">
                       Status: {kyc.status}
                     </div>
+                    <div className="mt-2 flex gap-2">
+                      {kyc.panDocumentFileId ? (
+                        <button
+                          type="button"
+                          onClick={() => handleFileDownload(kyc.panDocumentFileId, "pan-document.pdf")}
+                          className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100"
+                        >
+                          PAN PDF
+                        </button>
+                      ) : null}
+                      {kyc.aadhaarDocumentFileId ? (
+                        <button
+                          type="button"
+                          onClick={() => handleFileDownload(kyc.aadhaarDocumentFileId, "aadhaar-document.pdf")}
+                          className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100"
+                        >
+                          Aadhaar PDF
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
 
-                  {kyc.status === "PENDING" && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => approveKyc(kyc.id)}
-                        className="px-3 py-1 text-xs bg-emerald-600 text-white rounded"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => rejectKyc(kyc.id)}
-                        className="px-3 py-1 text-xs border border-rose-300 text-rose-700 rounded"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => approveKyc(kyc.id)}
+                      className="px-3 py-1 text-xs bg-emerald-600 text-white rounded"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => rejectKyc(kyc.id)}
+                      className="px-3 py-1 text-xs border border-rose-300 text-rose-700 rounded"
+                    >
+                      Reject
+                    </button>
+                  </div>
                 </div>
 
-                {kyc.status === "PENDING" ? (
-                  <input
-                    value={kycRemarks[kyc.id] || ""}
-                    onChange={(e) =>
-                      setKycRemarks((p) => ({ ...p, [kyc.id]: e.target.value }))
-                    }
-                    placeholder="Officer remarks"
-                    className="mt-3 w-full rounded-lg border px-3 py-2 text-sm"
-                  />
-                ) : (
-                  <div className="mt-3 text-xs text-slate-500">
-                    Remarks: {kyc.remarks || "-"}
-                  </div>
-                )}
+                <input
+                  value={kycRemarks[kyc.id] || ""}
+                  onChange={(e) =>
+                    setKycRemarks((p) => ({ ...p, [kyc.id]: e.target.value }))
+                  }
+                  placeholder="Officer remarks"
+                  className="mt-3 w-full rounded-lg border px-3 py-2 text-sm"
+                />
+                <div className="mt-2 text-xs text-slate-500">
+                  Current Remarks: {kyc.remarks || "-"}
+                </div>
               </div>
             ))}
           </div>
@@ -187,3 +210,4 @@ export default function OfficerDashboard() {
     </PortalShell>
   );
 }
+
