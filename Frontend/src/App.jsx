@@ -32,9 +32,9 @@ import PersonalLoanEMI from "./pages/loans/PersonalLoanEMI.jsx";
 import VehicleLoanEMI from "./pages/loans/VehicleLoanEMI.jsx";
 
 
-
 import BusinessLoanApplication from
   "./pages/loans/applications/BusinessLoanApplication.jsx";
+import LoanSection from "./components/loans/LoansSection.jsx";
 export default function App() {
   return (
     <Routes>
@@ -44,6 +44,7 @@ export default function App() {
       {/* Auth */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+       
 
       {/* ADMIN & OFFICER AUTH */}
       <Route path="/login/admin" element={<AdminLogin />} />

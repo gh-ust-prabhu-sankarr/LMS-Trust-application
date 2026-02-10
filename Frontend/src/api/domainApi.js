@@ -27,7 +27,18 @@ export const customerApi = {
 // ---------------- KYC API ----------------
 export const kycApi = {
   // Customer actions
-  submit: (payload) => api.post("/kyc/submit", payload),
+  submit: (payload, panDocument, aadhaarDocument) => {      //diff typ data text ----binary
+    const formData = new FormData();//multipart/form-data starts. 
+    formData.append("fullName", payload.fullName ?? "");
+    formData.append("dob", payload.dob ?? "");
+    formData.append("panNumber", payload.panNumber ?? "");
+    formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
+    formData.append("panDocument", panDocument);
+    formData.append("aadhaarDocument", aadhaarDocument);
+    return api.post("/kyc/submit", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
   getMyKyc: () => api.get("/kyc/me"),
 
   // Officer/Admin actions
@@ -100,6 +111,20 @@ export const fileApi = {
   listByEntity: (entityType, entityId) => api.get(`/files/entity/${entityType}/${entityId}`),
   deleteFile: (fileId) => api.delete(`/files/${fileId}`),
   downloadUrl: (fileId) => `${api.defaults.baseURL}/files/download/${fileId}`,
+  download: async (fileId, fallbackName = "document.pdf") => {
+    const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
+    const disposition = res?.headers?.["content-disposition"] || "";
+    const match = disposition.match(/filename=\"?([^"]+)\"?/i);
+    const filename = match?.[1] || fallbackName;
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  },
 };
 
 // ---------------- ADMIN API ----------------

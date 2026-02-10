@@ -168,9 +168,9 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
   const xOffsetPx = centerPad - index * (cardW + gapPx);
 
   return (
-    <section className="py-20 bg-slate-50 relative overflow-hidden flex flex-col items-center justify-center">
+    <section id="loan-section" className="py-20 bg-slate-50 relative overflow-hidden flex flex-col items-center justify-center">
       <div
-        className="absolute inset-0 opacity-[0.04] pointer-events-none"
+        className="absolute inset-0 opacity-[0.09] pointer-events-none"
         style={{
           backgroundImage:
             "linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)",
