@@ -1,4 +1,3 @@
-// src/pages/dashboard/AdminDashboard.jsx
 import { useEffect, useState, useMemo } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
