@@ -72,7 +72,72 @@ const Hero = ({ onProtectedAction }) => {
         </motion.div>
 
         {/* RIGHT SIDE: The High-Highlight Hub */}
-        
+        <div className="relative flex items-center justify-center w-full h-[550px] lg:h-[650px]">
+          
+          {/* Intense Glow Layer to Highlight the Hub */}
+          <div className="absolute w-[420px] h-[420px] bg-emerald-400/20 rounded-full blur-[90px] animate-pulse" />
+
+          {/* 1. Center Hub Node (Highlighted & Non-White) */}
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 1 }}
+            className="relative z-30 w-44 h-44 bg-slate-100/90 backdrop-blur-2xl rounded-full flex flex-col items-center justify-center border border-white/80 shadow-[0_35px_70px_-15px_rgba(0,0,0,0.25)]"
+          >
+            {/* Rapid Pulse Ring */}
+            <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20 animate-ping" />
+            <div className="absolute inset-3 rounded-full border border-dashed border-emerald-400/40 animate-[spin_20s_linear_infinite]" />
+            
+            <div className="p-4 bg-white rounded-2xl mb-2 text-emerald-700 shadow-[0_8px_16px_rgba(0,0,0,0.05)] border border-emerald-100/50">
+              <Landmark size={36} />
+            </div>
+            <span className="text-[#0F172A] font-black text-[11px] tracking-[0.4em] uppercase">LMS HUB</span>
+          </motion.div>
+
+          {/* 2. Rotating Orbit Layer */}
+          <motion.div 
+            animate={{ rotate: 360 }} 
+            transition={{ duration: 50, repeat: Infinity, ease: "linear" }} 
+            className="absolute w-full h-full flex items-center justify-center z-20"
+          >
+            {loans.map((loan, index) => {
+                const angle = (index * 360) / loans.length;
+                return (
+                  <div 
+                    key={index} 
+                    className="absolute flex items-center justify-center" 
+                    style={{ transform: `rotate(${angle}deg) translateY(-220px)` }}
+                  >
+                    {/* The double counter-rotation ensures icon AND text stay perfectly straight */}
+                    <motion.div 
+                      animate={{ rotate: -360 }} 
+                      transition={{ duration: 50, repeat: Infinity, ease: "linear" }} 
+                      className="flex flex-col items-center"
+                    >
+                        <div style={{ transform: `rotate(${-angle}deg)` }} className="group flex flex-col items-center">
+                            {/* Orbit Box (Slate tint glass) */}
+                            <motion.div 
+                                whileHover={{ scale: 1.15, y: -8 }}
+                                className={`w-18 h-18 bg-slate-100/90 backdrop-blur-xl border border-white/80 flex items-center justify-center rounded-3xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.15)] group-hover:bg-gradient-to-br ${loan.gradient} group-hover:text-white group-hover:border-transparent group-hover:shadow-2xl group-hover:shadow-emerald-500/30 transition-all duration-500 text-slate-600 cursor-pointer p-5`}
+                            >
+                                {loan.icon}
+                            </motion.div>
+                            
+                            {/* Straight Text Label */}
+                            <div className="mt-4 px-4 py-1.5 bg-[#0F172A] rounded-xl opacity-0 group-hover:opacity-100 transition-all shadow-2xl transform translate-y-2 group-hover:translate-y-0">
+                                <span className="text-[10px] font-bold text-white uppercase tracking-[0.2em] whitespace-nowrap">{loan.label}</span>
+                            </div>
+                        </div>
+                    </motion.div>
+                  </div>
+                );
+            })}
+          </motion.div>
+
+          {/* 3. Decorative Outer Rings */}
+          <div className="absolute w-[440px] h-[440px] border border-emerald-500/10 rounded-full" />
+          <div className="absolute w-[560px] h-[560px] border border-slate-200/40 rounded-full border-dashed" />
+        </div>
       </div>
     </section>
   );
