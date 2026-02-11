@@ -159,11 +159,12 @@ public class KycService {
         targetUser.setKycStatus(saved.getStatus());
         targetUser.setUpdatedAt(LocalDateTime.now());
         userRepository.save(targetUser);
-
+//credit score...
         customerRepository.findByUserId(saved.getUserId()).ifPresent(customer -> {
             customer.setKycStatus(saved.getStatus());
             if (saved.getStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
                 customer.setCreditScore(650 + new java.util.Random().nextInt(251));
+                // Generate random score between 650 and 900
             }
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);

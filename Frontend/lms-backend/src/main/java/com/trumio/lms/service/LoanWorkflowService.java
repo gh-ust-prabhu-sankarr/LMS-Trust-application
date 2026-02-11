@@ -67,15 +67,18 @@ public class LoanWorkflowService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
 
         double amount = request.getApprovedAmount() == null ? 0.0 : request.getApprovedAmount();
+        // Get officer's current wallet balance
         double officerBalance = officer.getWalletBalance() == null ? INITIAL_OFFICER_WALLET : officer.getWalletBalance();
         double customerBalance = customer.getWalletBalance() == null ? 0.0 : customer.getWalletBalance();
-
+// Check if officer has enough money to approve loan
         if (officerBalance < amount) {
             throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Officer wallet balance is insufficient");
         }
-
+//off -> user
         officer.setWalletBalance(officerBalance - amount);
+        //user ->off repaymentt
         customer.setWalletBalance(customerBalance + amount);
+        //saveinggg to db
         userRepository.save(officer);
         customerRepository.save(customer);
 
@@ -113,6 +116,7 @@ public class LoanWorkflowService {
     }
 
     public ApiResponse<LoanApplication> disburseLoan(String loanId) {
+        // Fetch loan from database
         LoanApplication loan = getLoan(loanId);
         validateTransition(loan.getStatus(), LoanStatus.DISBURSED);
 

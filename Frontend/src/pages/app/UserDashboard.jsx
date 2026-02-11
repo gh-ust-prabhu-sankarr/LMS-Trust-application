@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, kycApi, loanApi } from "../../api/domainApi.js";
+import { customerApi, fileApi, kycApi, loanApi, productApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { useEmiSchedule } from "../../hooks/useEmiSchedule.js";
+import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
 
 const money = (n) => {
   const value = Number(n);
@@ -33,6 +33,7 @@ export default function UserDashboard() {
   const [activeLoanId, setActiveLoanId] = useState("");
   const { repayments, schedule, docs, actionBusy, actionError, payInstallment, missInstallment } = useEmiSchedule(activeLoanId);
   const [myKyc, setMyKyc] = useState(null);
+  const [productById, setProductById] = useState({});
 
   // --- Form States ---
   const [editing, setEditing] = useState(false);
@@ -82,7 +83,11 @@ export default function UserDashboard() {
     setError("");
     try {
       let profileData = null;
-      const [profileRes, loansRes] = await Promise.allSettled([customerApi.getMyProfile(), loanApi.getMyLoans()]);
+      const [profileRes, loansRes, productsRes] = await Promise.allSettled([
+        customerApi.getMyProfile(),
+        loanApi.getMyLoans(),
+        productApi.getAll(),
+      ]);
       
       if (profileRes.status === "fulfilled") {
         const p = profileRes.value.data;
@@ -98,6 +103,12 @@ export default function UserDashboard() {
         });
       }
       if (loansRes.status === "fulfilled") setMyLoans(loansRes.value.data || []);
+      if (productsRes.status === "fulfilled") {
+        const list = productsRes.value.data || [];
+        const map = {};
+        list.forEach((p) => { if (p?.id) map[p.id] = p; });
+        setProductById(map);
+      }
 
       try {
         const myKycRes = await kycApi.getMyKyc();
@@ -352,12 +363,13 @@ export default function UserDashboard() {
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-500">
-                <tr><th className="p-4">Loan ID</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
+                <tr><th className="p-4">Loan ID</th><th className="p-4">Loan</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {myLoans.map(loan => (
                   <tr key={loan.id}>
                     <td className="p-4 font-mono">{loan.id.slice(-8)}</td>
+                    <td className="p-4">{productById[loan.loanProductId]?.name || "Loan Product"}</td>
                     <td className="p-4">{money(loan.requestedAmount)}</td>
                     <td className="p-4"><span className="px-2 py-1 rounded-md bg-slate-100 text-[10px] font-bold">{loan.status}</span></td>
                     <td className="p-4"><button onClick={() => { setActiveLoanId(loan.id); setActiveTab("repayments"); }} className="text-emerald-700 font-bold hover:underline">View Details</button></td>
@@ -377,7 +389,10 @@ export default function UserDashboard() {
                 <h3 className="text-xs font-black uppercase mb-4">Select Loan</h3>
                 <select value={activeLoanId} onChange={(e) => setActiveLoanId(e.target.value)} className="w-full rounded-xl border-slate-300 text-sm">
                   <option value="">Choose a loan...</option>
-                  {myLoans.map(l => <option key={l.id} value={l.id}>{l.id.slice(-8)} ({l.status})</option>)}
+                  {myLoans.map(l => {
+                    const name = productById[l.loanProductId]?.name || "Loan";
+                    return <option key={l.id} value={l.id}>{name} ({l.status})</option>;
+                  })}
                 </select>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-200">

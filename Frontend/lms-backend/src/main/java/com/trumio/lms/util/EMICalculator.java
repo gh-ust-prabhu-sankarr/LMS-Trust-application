@@ -15,7 +15,10 @@ public class EMICalculator {
      * Formula: EMI = [P x R x (1+R)^N] / [(1+R)^N-1]
      */
     public static double calculateEMI(double principal, double annualRate, int tenureMonths) {
+        // Convert annual interest rate to monthly decimal rate
         double monthlyRate = annualRate / (12 * 100);
+        // basic emi formulaaa
+
         double emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths)) /
                 (Math.pow(1 + monthlyRate, tenureMonths) - 1);
         return Math.round(emi * 100.0) / 100.0;

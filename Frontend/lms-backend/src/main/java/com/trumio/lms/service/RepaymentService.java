@@ -46,6 +46,8 @@ public class RepaymentService {
         Customer customer = customerRepository.findById(loan.getCustomerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
         double amount = request.getAmount() == null ? 0.0 : request.getAmount();
+
+        // Check if customer has enough balance
         if (customer.getWalletBalance() == null) customer.setWalletBalance(0.0);
         if (customer.getWalletBalance() < amount) {
             throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Customer wallet balance is insufficient");
@@ -117,9 +119,10 @@ public class RepaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
 
         Optional<EMIInstallment> firstPending = schedule.getInstallments().stream()
-                .filter(i -> i.getStatus() == EMIStatus.PENDING)
+                .filter(i -> i.getStatus() == EMIStatus.PENDING) // // Find first unpaid EMI
                 .findFirst();
         if (firstPending.isPresent()) {
+            // Mark installment as overdue
             EMIInstallment installment = firstPending.get();
             installment.setStatus(EMIStatus.OVERDUE);
             emiScheduleRepository.save(schedule);
@@ -136,6 +139,7 @@ public class RepaymentService {
         customer.setWalletBalance(customer.getWalletBalance() - amount);
         if (loan.getReviewedBy() != null) {
             User officer = userRepository.findById(loan.getReviewedBy()).orElse(null);
+            // Credit officer wallet
             if (officer != null) {
                 double balance = officer.getWalletBalance() == null ? 0.0 : officer.getWalletBalance();
                 officer.setWalletBalance(balance + amount);
@@ -143,7 +147,7 @@ public class RepaymentService {
             }
         }
     }
-
+//credit score changes/....+5 ---10
     private void adjustCreditScore(Customer customer, int delta) {
         int current = customer.getCreditScore() == null ? 650 : customer.getCreditScore();
         int next = current + delta;
