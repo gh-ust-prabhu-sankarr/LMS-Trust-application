@@ -1,7 +1,15 @@
 import { api } from "./axios.js";
-
-// ✅ ADD THIS (so AdminDashboard can import it)
 export const unwrap = (res) => res?.data?.data ?? res?.data;
+const shouldFallbackEndpoint = (err) => {
+  const status = err?.response?.status;
+  const message = String(err?.response?.data?.message || err?.message || "").toLowerCase();
+  const missingEndpointMessage =
+    message.includes("no static resource") ||
+    message.includes("nohandlerfound") ||
+    message.includes("not found");
+
+  return !status || status === 404 || status === 405 || missingEndpointMessage;
+};
 
 // ---------------- CUSTOMER API ----------------
 export const customerApi = {
@@ -12,8 +20,51 @@ export const customerApi = {
   updateMyProfile: (payload) => api.post("/customers/profile", payload),
 
   getById: (customerId) => api.get(`/customers/${customerId}`),
+};
 
-  submitMockKyc: (payload) => api.post("/kyc/mock/submit", payload),
+// ---------------- KYC API ----------------
+export const kycApi = {
+  // Customer actions
+  submit: (payload, panDocument, aadhaarDocument) => {      //diff typ data text ----binary
+    const formData = new FormData();   //multipart/form-data starts. 
+    formData.append("fullName", payload.fullName ?? "");
+    formData.append("dob", payload.dob ?? "");
+    formData.append("panNumber", payload.panNumber ?? "");
+    formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
+    formData.append("panDocument", panDocument); // it contians nam sizeee type actual data   Browser reads file as bytes
+    formData.append("aadhaarDocument", aadhaarDocument);
+    return api.post("/kyc/submit", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+  getMyKyc: () => api.get("/kyc/me"),
+
+  // Officer/Admin actions
+  getByStatus: async (status) => {
+    try {
+      return await api.get("/officer/kyc", { params: { status } });
+    } catch (err) {
+      if (!shouldFallbackEndpoint(err)) throw err;
+      // Fallback for environments still exposing admin KYC endpoint
+      return api.get("/admin/kyc", { params: { status } });
+    }
+  },
+  approve: async (kycId, remarks) => {
+    try {
+      return await api.post(`/officer/kyc/${kycId}/approve`, { remarks });
+    } catch (err) {
+      if (!shouldFallbackEndpoint(err)) throw err;
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "APPROVED", remarks });
+    }
+  },
+  reject: async (kycId, remarks) => {
+    try {
+      return await api.post(`/officer/kyc/${kycId}/reject`, { remarks });
+    } catch (err) {
+      if (!shouldFallbackEndpoint(err)) throw err;
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "REJECTED", remarks });
+    }
+  },
 };
 
 // ---------------- PRODUCT API ----------------
@@ -41,6 +92,7 @@ export const repaymentApi = {
   makePayment: (payload) => api.post("/repayments", payload),
   getByLoan: (loanId) => api.get(`/repayments/loan/${loanId}`),
   getSchedule: (loanId) => api.get(`/repayments/schedule/${loanId}`),
+  markMissed: (loanId) => api.post(`/repayments/miss/${loanId}`),
 };
 
 // ---------------- FILE API ----------------
@@ -58,6 +110,20 @@ export const fileApi = {
   listByEntity: (entityType, entityId) => api.get(`/files/entity/${entityType}/${entityId}`),
   deleteFile: (fileId) => api.delete(`/files/${fileId}`),
   downloadUrl: (fileId) => `${api.defaults.baseURL}/files/download/${fileId}`,
+  download: async (fileId, fallbackName = "document.pdf") => {
+    const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
+    const disposition = res?.headers?.["content-disposition"] || "";
+    const match = disposition.match(/filename=\"?([^"]+)\"?/i);
+    const filename = match?.[1] || fallbackName;
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  },
 };
 
 // ---------------- ADMIN API ----------------
@@ -67,4 +133,9 @@ export const adminApi = {
   createOfficer: (payload) => api.post("/admin/users/officer", payload),
   getAuditByUser: (userId) => api.get(`/admin/audit/user/${userId}`),
   getAuditByEntity: (entityType, entityId) => api.get(`/admin/audit/entity/${entityType}/${entityId}`),
+};
+
+// ---------------- AUTH PROFILE API ----------------
+export const userApi = {
+  getMe: () => api.get("/auth/me"),
 };

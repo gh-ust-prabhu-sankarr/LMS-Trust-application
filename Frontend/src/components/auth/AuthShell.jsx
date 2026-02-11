@@ -102,7 +102,7 @@ export default function AuthShell({
             </div>
 
             <div className="mt-6 text-center text-xs text-slate-500">
-              © {new Date().getFullYear()} LoanBank • Loan Management System
+
             </div>
           </div>
         </div>

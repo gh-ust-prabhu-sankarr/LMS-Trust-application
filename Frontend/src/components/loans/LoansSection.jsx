@@ -1,19 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import {
-  ChevronRight,
-  ChevronLeft,
-  ArrowRight,
-  User,
-  GraduationCap,
-  Car,
-  Briefcase,
-  CheckCircle2,
-  RefreshCw,
-  Lock,
-} from "lucide-react";
+import { ChevronRight, ChevronLeft, ArrowRight, User, GraduationCap, Car, Briefcase, CheckCircle2, RefreshCw, Lock } from "lucide-react";
 import { productApi, unwrap } from "../../api/domainApi.js";
+import { mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 
 const inr = (n) =>
   typeof n === "number"
@@ -24,125 +14,44 @@ const inr = (n) =>
       })
     : "-";
 
-const pickMeta = (name = "") => {
-  const n = String(name || "").toLowerCase();
-
-  if (n.includes("personal"))
-    return {
-      icon: <User size={28} />,
-      color: "bg-emerald-600",
-      subtitle: "Instant Liquidity",
-      route: "/loan/personal",
-    };
-  if (n.includes("education") || n.includes("educational") || n.includes("student"))
-    return {
-      icon: <GraduationCap size={28} />,
-      color: "bg-purple-600",
-      subtitle: "Future Investment",
-      route: "/loan/education",
-    };
-  if (n.includes("vehicle") || n.includes("car") || n.includes("auto"))
-    return {
-      icon: <Car size={28} />,
-      color: "bg-amber-500",
-      subtitle: "Asset Financing",
-      route: "/loan/vehicle",
-    };
-  if (n.includes("business") || n.includes("msme") || n.includes("working"))
-    return {
-      icon: <Briefcase size={28} />,
-      color: "bg-blue-600",
-      subtitle: "Enterprise Scaling",
-      route: "/loan/business",
-    };
-
-  return {
-    icon: <Briefcase size={28} />,
-    color: "bg-slate-900",
-    subtitle: "Flexible Credit",
-    route: "/loan/business",
-  };
+const iconByKey = (key) => {
+  if (key === "personal") return <User size={28} />;
+  if (key === "education") return <GraduationCap size={28} />;
+  if (key === "vehicle") return <Car size={28} />;
+  return <Briefcase size={28} />;
 };
 
-const toSlide = (p) => {
-  const meta = pickMeta(p?.name);
-  return {
-    id: p?.id,
-    title: p?.name || "Loan Product",
-    subtitle: meta.subtitle,
-    desc: p?.description || "Flexible loan product designed for your needs.",
-    rate: p?.interestRate != null ? `${p.interestRate}% APR` : "-",
-    limit: p?.maxAmount != null ? `${inr(p.maxAmount)} Max` : "-",
-    minAmount: p?.minAmount,
-    maxAmount: p?.maxAmount,
-    minTenure: p?.minTenure,
-    maxTenure: p?.maxTenure,
-    minCreditScore: p?.minCreditScore,
-    icon: meta.icon,
-    color: meta.color,
-    route: meta.route,
-    active: p?.active !== false,
-  };
+const colorByTheme = (theme) => {
+  if (theme === "emerald") return "bg-emerald-600";
+  if (theme === "blue") return "bg-blue-600";
+  if (theme === "purple") return "bg-purple-600";
+  if (theme === "orange") return "bg-amber-500";
+  return "bg-slate-900";
 };
 
-// ✅ Only used if backend/server is DOWN (not for 403/401)
-const DEMO_PRODUCTS = [
-  {
-    id: "demo-1",
-    name: "Personal Loan",
-    description: "Quick personal loans for your immediate financial needs with flexible repayment options.",
-    minAmount: 50000,
-    maxAmount: 500000,
-    minTenure: 12,
-    maxTenure: 60,
-    interestRate: 10.5,
-    minCreditScore: 650,
-    active: true,
-  },
-  {
-    id: "demo-2",
-    name: "Business Loan",
-    description: "Fuel your business growth with flexible funding solutions designed for entrepreneurs.",
-    minAmount: 100000,
-    maxAmount: 5000000,
-    minTenure: 12,
-    maxTenure: 84,
-    interestRate: 12.0,
-    minCreditScore: 700,
-    active: true,
-  },
-  {
-    id: "demo-3",
-    name: "Education Loan",
-    description: "Invest in your future with our comprehensive education financing programs.",
-    minAmount: 100000,
-    maxAmount: 2000000,
-    minTenure: 12,
-    maxTenure: 120,
-    interestRate: 9.5,
-    minCreditScore: 600,
-    active: true,
-  },
-  {
-    id: "demo-4",
-    name: "Vehicle Loan",
-    description: "Drive your dream vehicle with competitive auto financing options.",
-    minAmount: 200000,
-    maxAmount: 1500000,
-    minTenure: 12,
-    maxTenure: 72,
-    interestRate: 11.0,
-    minCreditScore: 650,
-    active: true,
-  },
-];
+const toSlide = (loan) => ({
+  id: loan?.id,
+  title: loan?.name || "Loan Product",
+  subtitle: loan?.badgeText || "Flexible Credit",
+  desc: loan?.description || "Flexible loan product designed for your needs.",
+  rate: loan?.interestRate != null ? `${loan.interestRate}% APR` : "-",
+  limit: loan?.maxAmount != null ? `${inr(loan.maxAmount)} Max` : "-",
+  minAmount: loan?.minAmount,
+  maxAmount: loan?.maxAmount,
+  minTenure: loan?.minTenure,
+  maxTenure: loan?.maxTenure,
+  minCreditScore: loan?.minCreditScore,
+  icon: iconByKey(loan?.key),
+  color: colorByTheme(loan?.colorTheme),
+  route: `/loan/${loan.slug}`,
+  active: loan?.active !== false,
+});
 
 export default function LoanSection({ isAuthenticated, onRequireLogin }) {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState([]);
   const [index, setIndex] = useState(0);
-  const [usingDemo, setUsingDemo] = useState(false);
-  const [blocked, setBlocked] = useState(false); // ✅ true when 401/403
+  const [usingFallback, setUsingFallback] = useState(false);
   const navigate = useNavigate();
 
   const slides = useMemo(() => {
@@ -154,27 +63,15 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
 
   const loadProducts = async () => {
     setLoading(true);
-    setUsingDemo(false);
-    setBlocked(false);
-
+    setUsingFallback(false);
     try {
       const res = await productApi.getAll();
       const data = unwrap(res) || [];
       const list = Array.isArray(data) ? data : [data];
-      setProducts(list);
-    } catch (e) {
-      const status = e?.response?.status;
-
-      //  If backend blocks product listing before login -> SHOW MESSAGE (no demo)
-      if (status === 401 || status === 403) {
-        setProducts([]);
-        setBlocked(true);
-        return;
-      }
-
-      //  Only if server/network error -> show demo products
-      setProducts(DEMO_PRODUCTS);
-      setUsingDemo(true);
+      setProducts(mergeLoansWithDefaults(list));
+    } catch {
+      setProducts(mergeLoansWithDefaults([]));
+      setUsingFallback(true);
     } finally {
       setLoading(false);
     }
@@ -221,9 +118,9 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
   };
 
   return (
-    <section className="py-20 bg-slate-50 relative overflow-hidden flex flex-col items-center justify-center">
+    <section id="loan-section" className="py-20 bg-slate-50 relative overflow-hidden flex flex-col items-center justify-center">
       <div
-        className="absolute inset-0 opacity-[0.04] pointer-events-none"
+        className="absolute inset-0 opacity-[0.09] pointer-events-none"
         style={{
           backgroundImage:
             "linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)",
@@ -232,13 +129,7 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
       />
 
       <div className="max-w-7xl mx-auto px-4 lg:px-16 w-full relative z-10">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-100px" }}
-          variants={scrollReveal}
-          className="mb-10 text-center md:text-left"
-        >
+        <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={scrollReveal} className="mb-10 text-center md:text-left">
           <span className="text-emerald-700 font-bold tracking-[0.3em] uppercase text-[9px] bg-emerald-50 px-3 py-1 rounded-sm border border-emerald-100">
             Active Portfolios
           </span>
@@ -248,12 +139,9 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
               <h2 className="text-3xl md:text-5xl font-serif text-slate-900">
                 Select Your <span className="italic text-emerald-700">Funding.</span>
               </h2>
-              {usingDemo ? (
-                <p className="text-xs text-slate-500 mt-2">Demo products (server not reachable). Login later to see live products.</p>
-              ) : null}
-              {blocked ? (
-                <p className="text-xs text-rose-600 mt-2">
-                  Products API is blocked (401/403). Backend must allow <b>GET /api/products</b> as <b>permitAll</b>.
+              {usingFallback ? (
+                <p className="text-xs text-slate-500 mt-2">
+                  Showing default loans. Admin-added products will appear once products API is reachable.
                 </p>
               ) : null}
             </div>
@@ -280,38 +168,12 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
           </div>
         ) : !slides.length ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center">
-            <div className="max-w-md mx-auto">
-              <Briefcase size={48} className="mx-auto mb-4 text-slate-300" />
-              <div className="font-semibold text-slate-700 mb-2 text-lg">No Products Visible</div>
-              <div className="text-sm text-slate-500 mb-6">
-                If Admin already created products but you still see this, backend is blocking public access.
-                <br />
-                 Allow <b>GET /api/products</b> in SecurityConfig (permitAll).
-              </div>
-              <button
-                onClick={loadProducts}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-900 hover:text-white transition-all inline-flex items-center gap-2"
-                type="button"
-              >
-                <RefreshCw size={12} />
-                Retry
-              </button>
-            </div>
+            <div className="font-semibold text-slate-700 mb-2 text-lg">No loan products visible</div>
           </div>
         ) : (
           <>
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: "-50px" }}
-              variants={scrollReveal}
-              className="relative w-full overflow-hidden py-4"
-            >
-              <motion.div
-                className="flex gap-5"
-                animate={{ x: `calc(12.5% - ${index * 75}% - ${index * 20}px)` }}
-                transition={{ type: "spring", damping: 25, stiffness: 120 }}
-              >
+            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-50px" }} variants={scrollReveal} className="relative w-full overflow-hidden py-4">
+              <motion.div className="flex gap-5" animate={{ x: `calc(12.5% - ${index * 75}% - ${index * 20}px)` }} transition={{ type: "spring", damping: 25, stiffness: 120 }}>
                 {slides.map((slide, i) => {
                   const isActive = i === index;
                   return (
@@ -361,10 +223,7 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
                             ]
                               .filter(Boolean)
                               .map((tag) => (
-                                <div
-                                  key={tag}
-                                  className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100"
-                                >
+                                <div key={tag} className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
                                   <CheckCircle2 size={12} className="text-emerald-500" />
                                   <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{tag}</span>
                                 </div>
@@ -401,13 +260,7 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
               </motion.div>
             </motion.div>
 
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true }}
-              variants={scrollReveal}
-              className="flex flex-col md:flex-row items-center justify-between gap-6 mt-10"
-            >
+            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={scrollReveal} className="flex flex-col md:flex-row items-center justify-between gap-6 mt-10">
               <div className="w-full max-w-xs">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress</span>
@@ -449,3 +302,4 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
     </section>
   );
 }
+

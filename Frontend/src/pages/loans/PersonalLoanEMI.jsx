@@ -236,7 +236,8 @@ const PersonalLoanEMI = () => {
                 </div>
  
                 <button
-                  onClick={() => navigate(isAuthenticated ? "/app" : "/login")}
+                  onClick={() => navigate(isAuthenticated ? "/loan/personal/apply" : "/login")
+}
                   className="w-full py-4 bg-slate-900 text-white font-black uppercase text-[10px] tracking-[0.3em] rounded-xl hover:bg-emerald-700 transition-all active:scale-95 shadow-lg"
                 >
                   Apply For Funding
