@@ -1,6 +1,4 @@
 import { api } from "./axios.js";
-
-// ✅ ADD THIS (so AdminDashboard can import it)
 export const unwrap = (res) => res?.data?.data ?? res?.data;
 const shouldFallbackEndpoint = (err) => {
   const status = err?.response?.status;
@@ -28,12 +26,12 @@ export const customerApi = {
 export const kycApi = {
   // Customer actions
   submit: (payload, panDocument, aadhaarDocument) => {      //diff typ data text ----binary
-    const formData = new FormData();//multipart/form-data starts. 
+    const formData = new FormData();   //multipart/form-data starts. 
     formData.append("fullName", payload.fullName ?? "");
     formData.append("dob", payload.dob ?? "");
     formData.append("panNumber", payload.panNumber ?? "");
     formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
-    formData.append("panDocument", panDocument);
+    formData.append("panDocument", panDocument); // it contians nam sizeee type actual data   Browser reads file as bytes
     formData.append("aadhaarDocument", aadhaarDocument);
     return api.post("/kyc/submit", formData, {
       headers: { "Content-Type": "multipart/form-data" },
