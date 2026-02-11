@@ -168,7 +168,7 @@ export default function OfficerDashboard() {
       setOfficerWallet((prev) => prev - Number(loan.requestedAmount || 0));
       setLoanRemarks((prev) => ({ ...prev, [loan.id]: "" }));
       await loadLoans();
-      
+      await loadOfficerWallet();
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || "Loan approval failed");
     }
