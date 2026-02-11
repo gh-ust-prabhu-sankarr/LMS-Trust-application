@@ -12,6 +12,7 @@ const toCurrency = (value) =>
     maximumFractionDigits: 0,
   }).format(value || 0);
 //addeddd
+//dwsad
 const toFieldInputType = (type = "text") => {
   if (type === "textarea") return "textarea";
   if (type === "number") return "number";
