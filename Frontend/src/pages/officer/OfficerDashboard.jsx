@@ -101,7 +101,13 @@ export default function OfficerDashboard() {
           {error}
         </div>
       )}
-
+ <div
+        className="absolute inset-0 opacity-[0.09] pointer-events-none"
+        style={{
+          backgroundImage: `linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)`,
+          backgroundSize: '40px 40px'
+        }}
+      />
       {/* KYC STATUS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {KYC_STATUSES.map((s) => (
@@ -130,7 +136,7 @@ export default function OfficerDashboard() {
           </h2>
           <button
             onClick={loadKyc}
-            className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest border rounded-sm"
+            className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest border rounded-2xl b"
           >
             Refresh
           </button>

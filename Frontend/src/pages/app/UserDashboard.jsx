@@ -14,7 +14,7 @@ const KYC_META = {
   VERIFIED: { label: "APPROVED", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
   REJECTED: { label: "REJECTED", cls: "bg-rose-50 text-rose-800 border-rose-200" },
 };
-const MAX_KYC_DOC_SIZE_BYTES = 500 * 1024;
+const MAX_KYC_DOC_SIZE_BYTES = 500 * 1024; //size....kb 
 
 export default function UserDashboard() {
   const { user } = useAuth();
@@ -148,7 +148,7 @@ export default function UserDashboard() {
   };
 
   const submitKyc = async () => {
-    setKycError("");
+    setKycError("");  //pdf validation -----
     const validatePdf = (file, label) => {
       if (!file) return `${label} PDF is required`;
       if (file.type !== "application/pdf") return `${label} must be a PDF`;
@@ -275,7 +275,7 @@ export default function UserDashboard() {
               <Field label="Date of Birth"><input type="date" value={kycForm.dob} onChange={(e) => setKycForm({...kycForm, dob: e.target.value})} className="w-full border rounded-xl p-2" /></Field>
               <Field label="PAN Number"><input value={kycForm.panNumber} onChange={(e) => setKycForm({...kycForm, panNumber: e.target.value.toUpperCase()})} className="w-full border rounded-xl p-2" /></Field>
               <Field label="Aadhaar"><input value={kycForm.aadhaarNumber} onChange={(e) => setKycForm({...kycForm, aadhaarNumber: e.target.value})} className="w-full border rounded-xl p-2" /></Field>
-              <Field label="PAN Card (PDF)"><input type="file" accept="application/pdf" onChange={(e) => setPanFile(e.target.files[0])} className="w-full text-xs" /></Field>
+              <Field label="PAN Card (PDF)"><input type="file" accept="application/pdf" onChange={(e) => setPanFile(e.target.files[0])} className="w-full text-xs" /></Field> //pdf onlyyy
               <Field label="Aadhaar (PDF)"><input type="file" accept="application/pdf" onChange={(e) => setAadhaarFile(e.target.files[0])} className="w-full text-xs" /></Field>
               <div className="md:col-span-2 flex gap-2">
                 <button onClick={submitKyc} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase">{kycSubmitting ? "Uploading..." : myKyc ? "Resubmit Verification" : "Submit Verification"}</button>
