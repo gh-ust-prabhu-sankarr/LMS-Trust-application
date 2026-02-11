@@ -25,11 +25,14 @@ import java.time.Period;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class KycService {
+    private static final int MIN_CREDIT_SCORE = 650;
+    private static final int MAX_CREDIT_SCORE = 900;
 
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
@@ -162,6 +165,10 @@ public class KycService {
 
         customerRepository.findByUserId(saved.getUserId()).ifPresent(customer -> {
             customer.setKycStatus(saved.getStatus());
+            if (saved.getStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
+                int generatedScore = ThreadLocalRandom.current().nextInt(MIN_CREDIT_SCORE, MAX_CREDIT_SCORE + 1);
+                customer.setCreditScore(generatedScore);
+            }
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);
         });

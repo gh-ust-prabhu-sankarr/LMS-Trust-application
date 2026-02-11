@@ -92,6 +92,7 @@ export const repaymentApi = {
   makePayment: (payload) => api.post("/repayments", payload),
   getByLoan: (loanId) => api.get(`/repayments/loan/${loanId}`),
   getSchedule: (loanId) => api.get(`/repayments/schedule/${loanId}`),
+  markMissed: (loanId) => api.post(`/repayments/miss/${loanId}`),
 };
 
 // ---------------- FILE API ----------------
@@ -132,4 +133,9 @@ export const adminApi = {
   createOfficer: (payload) => api.post("/admin/users/officer", payload),
   getAuditByUser: (userId) => api.get(`/admin/audit/user/${userId}`),
   getAuditByEntity: (entityType, entityId) => api.get(`/admin/audit/entity/${entityType}/${entityId}`),
+};
+
+// ---------------- AUTH PROFILE API ----------------
+export const userApi = {
+  getMe: () => api.get("/auth/me"),
 };

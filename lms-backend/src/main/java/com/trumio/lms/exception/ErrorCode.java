@@ -40,6 +40,8 @@ public enum ErrorCode {
     REPAYMENT_FAILED("PAY_001", "Payment processing failed", HttpStatus.BAD_REQUEST),
     INVALID_AMOUNT("PAY_002", "Invalid payment amount", HttpStatus.BAD_REQUEST),
     EMI_NOT_FOUND("PAY_003", "EMI installment not found", HttpStatus.NOT_FOUND),
+    INSUFFICIENT_WALLET_BALANCE("PAY_004", "Insufficient wallet balance", HttpStatus.BAD_REQUEST),
+    INSUFFICIENT_WALLET_BALANCE("PAY_004", "Insufficient wallet balance", HttpStatus.BAD_REQUEST),
 
     // Media
     FILE_UPLOAD_FAILED("FILE_001", "File upload failed", HttpStatus.INTERNAL_SERVER_ERROR),
