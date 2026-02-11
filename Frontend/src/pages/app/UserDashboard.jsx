@@ -285,7 +285,7 @@ export default function UserDashboard() {
           </div>
           <div className="space-y-4">
              <StatCard label="Monthly EMI" value={money(stats.pendingEmiAmount)} />
-             
+             <StatCard label="Credit Score" value={profile?.creditScore ?? "-"} />
              <StatCard label="Wallet" value={money(resolvedWallet)} />
           </div>
         </div>
