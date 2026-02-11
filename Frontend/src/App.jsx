@@ -1,6 +1,4 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import AdminLoanFormTemplates from "./pages/admin/AdminLoanFormTemplates.jsx";
-import DynamicLoanApply from "./pages/loans/DynamicLoanApply.jsx";
 
 import Login from "./pages/auth/Login.jsx";
 import Register from "./pages/auth/Register.jsx";
@@ -70,9 +68,6 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="/admin/forms" element={<AdminLoanFormTemplates />} />
-      <Route path="/loan/:loanType/apply" element={<DynamicLoanApply />} />
-
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
