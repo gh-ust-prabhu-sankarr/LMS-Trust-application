@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
+import { customerApi, fileApi, kycApi, loanApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { useEmiSchedule } from "../../hooks/useEmiSchedule.js";
 
-const money = (n) =>
-  typeof n === "number"
-    ? n.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })
+const money = (n) => {
+  const value = Number(n);
+  return Number.isFinite(value)
+    ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })
     : "-";
+};
 
 const KYC_META = {
   PENDING: { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" },
@@ -28,9 +31,7 @@ export default function UserDashboard() {
   const [profile, setProfile] = useState(null);
   const [myLoans, setMyLoans] = useState([]);
   const [activeLoanId, setActiveLoanId] = useState("");
-  const [repayments, setRepayments] = useState([]);
-  const [schedule, setSchedule] = useState(null);
-  const [docs, setDocs] = useState([]);
+  const { repayments, schedule, docs, actionBusy, actionError, payInstallment, missInstallment } = useEmiSchedule(activeLoanId);
   const [myKyc, setMyKyc] = useState(null);
 
   // --- Form States ---
@@ -49,6 +50,12 @@ export default function UserDashboard() {
   const [kycForm, setKycForm] = useState({
     fullName: "", dob: "", panNumber: "", aadhaarNumber: "",
   });
+  const resolvedWallet = profile?.walletBalance ?? 100000;
+  const formatDate = (value) => {
+    if (!value) return "-";
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString("en-IN");
+  };
 
   // --- Logic ---
   const kycStatusMeta = useMemo(() => {
@@ -112,38 +119,49 @@ export default function UserDashboard() {
 
   useEffect(() => { loadBase(); }, []);
 
-  useEffect(() => {
-    if (!activeLoanId) {
-      setRepayments([]); setSchedule(null); setDocs([]);
-      return;
-    }
-    const loadLoanSide = async () => {
-      try {
-        const [repRes, schRes, fileRes] = await Promise.allSettled([
-          repaymentApi.getByLoan(activeLoanId),
-          repaymentApi.getSchedule(activeLoanId),
-          fileApi.listByEntity("LOAN_APPLICATION", activeLoanId),
-        ]);
-        if (repRes.status === "fulfilled") setRepayments(repRes.value.data || []);
-        if (schRes.status === "fulfilled") setSchedule(schRes.value.data || null);
-        if (fileRes.status === "fulfilled") setDocs(fileRes.value.data || []);
-      } catch { /* ignore */ }
-    };
-    loadLoanSide();
-  }, [activeLoanId]);
-
   const saveProfile = async () => {
     setEditError("");
     try {
       setSaving(true);
-      const res = await customerApi.updateMyProfile({
-        ...editForm,
-        panNumber: editForm.panNumber?.toUpperCase(),
-        monthlyIncome: editForm.monthlyIncome === "" ? null : Number(editForm.monthlyIncome),
-      });
-      setProfile(res.data);
+      const payload = {
+        fullName: String(editForm.fullName || profile?.fullName || "").trim(),
+        phone: String(editForm.phone || profile?.phone || "").replace(/\D/g, "").slice(-10),
+        panNumber: String(editForm.panNumber || profile?.panNumber || "").toUpperCase().trim(),
+        address: String(editForm.address || profile?.address || "").trim(),
+        employmentType: String(editForm.employmentType || profile?.employmentType || "").trim(),
+        monthlyIncome: Number(editForm.monthlyIncome || profile?.monthlyIncome || 0),
+      };
+
+      if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType) {
+        setEditError("Please fill all required profile fields.");
+        return;
+      }
+      if (!/^[0-9]{10}$/.test(payload.phone)) {
+        setEditError("Phone must be exactly 10 digits.");
+        return;
+      }
+      if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(payload.panNumber)) {
+        setEditError("PAN must be valid (e.g., ABCDE1234F).");
+        return;
+      }
+      if (!Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
+        setEditError("Monthly income must be greater than 0.");
+        return;
+      }
+
+      const res = await customerApi.updateMyProfile(payload);
+      const updated = res?.data?.data || res?.data;
+      setProfile(updated);
       setEditing(false);
-    } catch (e) { setEditError(e?.response?.data?.message || "Update failed"); } 
+    } catch (e) {
+      const data = e?.response?.data;
+      if (data && typeof data === "object" && !Array.isArray(data) && !data.message) {
+        const firstError = Object.values(data)[0];
+        setEditError(String(firstError || "Update failed"));
+      } else {
+        setEditError(data?.message || e?.message || "Update failed");
+      }
+    } 
     finally { setSaving(false); }
   };
 
@@ -173,6 +191,16 @@ export default function UserDashboard() {
   const handleFileDownload = async (fileId, name) => {
     try { await fileApi.download(fileId, name); } 
     catch { setKycError("Download failed"); }
+  };
+
+  const handlePayInstallment = async (installment) => {
+    const ok = await payInstallment(installment);
+    if (ok) await loadBase();
+  };
+
+  const handleMissInstallment = async () => {
+    const ok = await missInstallment();
+    if (ok) await loadBase();
   };
 
   if (loading) return <PortalShell title="Loading...">...</PortalShell>;
@@ -220,12 +248,36 @@ export default function UserDashboard() {
                 <Info label="Income" value={money(profile?.monthlyIncome)} />
                 <Info label="Employment" value={profile?.employmentType} />
                 <Info label="Credit Score" value={profile?.creditScore} />
+                <Info label="Wallet Balance" value={money(resolvedWallet)} />
                 <Info label="Address" value={profile?.address} wide />
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Full Name"><input value={editForm.fullName} onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /></Field>
                 <Field label="Phone"><input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /></Field>
+                <Field label="PAN"><input value={editForm.panNumber} onChange={(e) => setEditForm({ ...editForm, panNumber: e.target.value.toUpperCase() })} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /></Field>
+                <Field label="Employment Type">
+                  <select
+                    value={editForm.employmentType}
+                    onChange={(e) => setEditForm({ ...editForm, employmentType: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Select type</option>
+                    <option value="SALARIED">SALARIED</option>
+                    <option value="SELF_EMPLOYED">SELF_EMPLOYED</option>
+                    <option value="BUSINESS">BUSINESS</option>
+                    <option value="OTHER">OTHER</option>
+                  </select>
+                </Field>
+                <Field label="Monthly Income">
+                  <input
+                    type="number"
+                    min="1"
+                    value={editForm.monthlyIncome}
+                    onChange={(e) => setEditForm({ ...editForm, monthlyIncome: e.target.value })}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </Field>
                 <Field label="Address" wide><input value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /></Field>
                 <div className="md:col-span-2"><button onClick={saveProfile} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase">{saving ? "Saving..." : "Save Profile"}</button></div>
               </div>
@@ -234,6 +286,7 @@ export default function UserDashboard() {
           <div className="space-y-4">
              <StatCard label="Monthly EMI" value={money(stats.pendingEmiAmount)} />
              <StatCard label="Credit Score" value={profile?.creditScore ?? "-"} />
+             <StatCard label="Wallet" value={money(resolvedWallet)} />
           </div>
         </div>
       )}
@@ -341,12 +394,50 @@ export default function UserDashboard() {
           <div className="xl:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200">
               <h3 className="text-xs font-black uppercase mb-4">EMI Schedule</h3>
+              {actionError && <div className="mb-4 text-sm text-rose-600">{actionError}</div>}
               {!schedule ? <p className="text-sm text-slate-400">Select an active loan to see the schedule.</p> : (
                 <div className="space-y-3">
                   {schedule.installments?.map((ins, idx) => (
                     <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl text-sm">
-                      <div><span className="font-bold">EMI #{ins.emiNumber}</span><span className="ml-3 text-slate-500 text-xs">{ins.dueDate}</span></div>
-                      <div className="font-bold text-slate-900">{money(ins.totalAmount)}</div>
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold">EMI #{ins.installmentNumber ?? ins.emiNumber ?? idx + 1}</span>
+                          <span className="text-slate-500 text-xs">Due: {formatDate(ins.dueDate)}</span>
+                          <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full border ${
+                            ins.status === "PAID"
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                              : ins.status === "PARTIAL"
+                              ? "bg-amber-50 text-amber-800 border-amber-200"
+                              : ins.status === "OVERDUE"
+                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                              : "bg-slate-50 text-slate-600 border-slate-200"
+                          }`}>
+                            {ins.status || "PENDING"}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Paid: {money(ins.paidAmount)}{ins.paidDate ? ` on ${formatDate(ins.paidDate)}` : ""}
+                        </div>
+                      </div>
+                        <div className="flex items-center gap-3">
+                          <div className="font-bold text-slate-900">{money(ins.totalAmount)}</div>
+                          <button
+                          onClick={() => handlePayInstallment(ins)}
+                          disabled={actionBusy || ins.status === "PAID"}
+                          className={`px-3 py-1 text-xs rounded ${
+                            ins.status === "PAID" ? "bg-slate-200 text-slate-500" : "bg-emerald-600 text-white"
+                          }`}
+                        >
+                          Pay
+                        </button>
+                        <button
+                          onClick={handleMissInstallment}
+                          disabled={actionBusy || ins.status === "PAID"}
+                          className="px-3 py-1 text-xs rounded border border-rose-300 text-rose-700"
+                        >
+                          Miss
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

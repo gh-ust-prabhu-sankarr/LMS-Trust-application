@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, ChevronDown, FileText, ShieldCheck, Target } from "lucide-react";
 import Navbar from "../../components/navbar/Navbar.jsx";
-import { productApi, unwrap } from "../../api/domainApi.js";
+import { customerApi, productApi, unwrap } from "../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
@@ -137,6 +137,40 @@ export default function LoanDetailsEMI() {
 
   const scrollToCalculator = () => {
     calcRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleProceedToApplication = async () => {
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+    try {
+      const profileRes = await customerApi.getMyProfile();
+      const profile = unwrap(profileRes) || profileRes?.data;
+      const kycStatus = String(profile?.kycStatus || "").toUpperCase();
+      if (kycStatus !== "APPROVED" && kycStatus !== "VERIFIED") {
+        alert("KYC verification is required before loan application.");
+        navigate("/app");
+        return;
+      }
+    } catch {
+      alert("Please complete profile and KYC verification before loan application.");
+      navigate("/app");
+      return;
+    }
+
+    navigate(`/loan/${activeLoan.slug}/apply`, {
+      state: {
+        amount,
+        rate,
+        tenure: tenureYears,
+        emi,
+        totalAmount,
+        loanSlug: activeLoan.slug,
+        loanName: activeLoan.name,
+        productId: activeLoan.id,
+      },
+    });
   };
 
   const progress = totalAmount > 0 ? (amount / totalAmount) * 100 : 0;
@@ -339,20 +373,7 @@ export default function LoanDetailsEMI() {
                 </div>
 
                 <button
-                  onClick={() =>
-                    navigate(isAuthenticated ? `/loan/${activeLoan.slug}/apply` : "/login", {
-                      state: {
-                        amount,
-                        rate,
-                        tenure: tenureYears,
-                        emi,
-                        totalAmount,
-                        loanSlug: activeLoan.slug,
-                        loanName: activeLoan.name,
-                        productId: activeLoan.id,
-                      },
-                    })
-                  }
+                  onClick={handleProceedToApplication}
                   className={`w-full py-4 bg-slate-900 text-white font-black uppercase text-[10px] tracking-[0.2em] rounded-xl ${theme.hover} transition-all active:scale-95 shadow-lg`}
                 >
                   {activeLoan.ctaText}

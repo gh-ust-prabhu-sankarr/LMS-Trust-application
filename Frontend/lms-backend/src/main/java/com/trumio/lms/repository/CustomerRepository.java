@@ -1,0 +1,14 @@
+package com.trumio.lms.repository;
+
+import com.trumio.lms.entity.Customer;
+import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface CustomerRepository extends MongoRepository<Customer, String> {
+    Optional<Customer> findByUserId(String userId);
+    Optional<Customer> findByPanNumber(String panNumber);
+    Boolean existsByPanNumber(String panNumber);
+}

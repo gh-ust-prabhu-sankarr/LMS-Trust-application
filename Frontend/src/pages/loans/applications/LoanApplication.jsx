@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, IndianRupee, ShieldCheck, Upload } from "lucide-react";
 import Navbar from "../../../components/navbar/Navbar.jsx";
-import { productApi, unwrap } from "../../../api/domainApi.js";
+import { customerApi, fileApi, loanApi, productApi, unwrap } from "../../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../../utils/loanCatalog.js";
 
 const toCurrency = (value) =>
@@ -83,12 +83,53 @@ export default function LoanApplication() {
       alert("Please upload all required documents.");
       return;
     }
+    if (!activeLoan?.id || String(activeLoan.id).startsWith("default-")) {
+      alert("Loan product is not configured in backend yet. Ask admin to create this product first.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      // API integration point: submit formData + documents based on activeLoan.id.
-      alert(`${activeLoan?.name || "Loan"} application submitted successfully.`);
+      const profileRes = await customerApi.getMyProfile();
+      const profile = unwrap(profileRes) || profileRes?.data;
+      const kycStatus = String(profile?.kycStatus || "").toUpperCase();
+      if (kycStatus !== "APPROVED" && kycStatus !== "VERIFIED") {
+        alert("Please verify KYC before applying for a loan.");
+        navigate("/app");
+        return;
+      }
+
+      const loanTypeMap = {};
+      for (const field of applicationFields) {
+        loanTypeMap[field.key] = String(formData[field.key] ?? "");
+      }
+
+      const payload = {
+        loanProductId: activeLoan.id,
+        requestedAmount: Number(amount),
+        tenure: Number(tenure) * 12,
+        emi: Math.max(1, Math.round(Number(emi) || 0)),
+        interest_Rate: Number(rate),
+        loan_type: loanTypeMap,
+        custEmail: profile?.email || formData.email || "",
+      };
+
+      const createRes = await loanApi.create(payload);
+      const createdLoan = unwrap(createRes) || createRes?.data;
+      const loanId = createdLoan?.id;
+      if (!loanId) {
+        throw new Error("Loan creation failed. No loan id returned.");
+      }
+
+      await Promise.all(
+        requiredDocuments.map((docName) => fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId))
+      );
+
+      await loanApi.submit(loanId);
+      alert(`${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`);
       navigate("/app");
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "Loan application failed.");
     } finally {
       setSubmitting(false);
     }

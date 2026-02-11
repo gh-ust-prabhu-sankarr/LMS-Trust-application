@@ -14,12 +14,15 @@ package com.trumio.lms.service;
 //import com.loanapp.repository.UserRepository;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.LoanApprovalRequest;
+import com.trumio.lms.entity.Customer;
 import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.User;
 import com.trumio.lms.entity.enums.LoanStatus;
+import com.trumio.lms.entity.enums.Role;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
 import com.trumio.lms.exception.InvalidStateTransitionException;
+import com.trumio.lms.repository.CustomerRepository;
 import com.trumio.lms.repository.LoanApplicationRepository;
 import com.trumio.lms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,9 +34,11 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class LoanWorkflowService {
+    private static final double INITIAL_OFFICER_WALLET = 100_000_000.0; // 10 crore
 
     private final LoanApplicationRepository loanApplicationRepository;
     private final UserRepository userRepository;
+    private final CustomerRepository customerRepository;
     private final EMIService emiService;
     private final AuditService auditService;
 
@@ -54,16 +59,46 @@ public class LoanWorkflowService {
     public ApiResponse<LoanApplication> approveLoan(String loanId, LoanApprovalRequest request) {
         LoanApplication loan = getLoan(loanId);
         validateTransition(loan.getStatus(), LoanStatus.APPROVED);
+        User approver = getCurrentUser();
+        Customer borrower = customerRepository.findById(loan.getCustomerId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
+
+        Double approvedAmount = request.getApprovedAmount();
+        double approverWallet;
+        if (approver.getWalletBalance() == null && approver.getRole() == Role.CREDIT_OFFICER) {
+            approverWallet = INITIAL_OFFICER_WALLET;
+        } else {
+            approverWallet = approver.getWalletBalance() == null ? 0.0 : approver.getWalletBalance();
+        }
+        if (approvedAmount == null || approvedAmount <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_AMOUNT);
+        }
+        if (approverWallet < approvedAmount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE);
+        }
+
+        approver.setWalletBalance(approverWallet - approvedAmount);
+        approver.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(approver);
+
+        double borrowerWallet = borrower.getWalletBalance() == null ? 100_000.0 : borrower.getWalletBalance();
+        borrower.setWalletBalance(borrowerWallet + approvedAmount);
+        borrower.setUpdatedAt(LocalDateTime.now());
+        customerRepository.save(borrower);
 
         loan.setStatus(LoanStatus.APPROVED);
-        loan.setApprovedAmount(request.getApprovedAmount());
+        loan.setApprovedAmount(approvedAmount);
         loan.setApprovedAt(LocalDateTime.now());
-        loan.setReviewedBy(getCurrentUserId());
+        loan.setReviewedBy(approver.getId());
         loan.setUpdatedAt(LocalDateTime.now());
 
         LoanApplication saved = loanApplicationRepository.save(loan);
+        if (emiService.getScheduleByLoanId(saved.getId()).isEmpty()) {
+            emiService.generateSchedule(saved);
+        }
+
         auditService.log(getCurrentUserId(), "LOAN_APPROVED", "LOAN_APPLICATION",
-                loanId, "Loan approved: " + request.getComments());
+                loanId, "Loan approved and credited: " + request.getComments());
 
         return ApiResponse.success("Loan approved successfully", saved);
     }
@@ -129,9 +164,12 @@ public class LoanWorkflowService {
     }
 
     private String getCurrentUserId() {
+        return getCurrentUser().getId();
+    }
+
+    private User getCurrentUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .map(User::getId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 }
