@@ -20,8 +20,6 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class CustomerService {
-    private static final double INITIAL_CUSTOMER_WALLET = 100_000.0;
-
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
@@ -52,7 +50,6 @@ public class CustomerService {
         customer.setEmploymentType(request.getEmploymentType());
         customer.setMonthlyIncome(request.getMonthlyIncome());
         if (customer.getKycStatus() == null) customer.setKycStatus(user.getKycStatus());
-        if (customer.getWalletBalance() == null) customer.setWalletBalance(INITIAL_CUSTOMER_WALLET);
         if (customer.getCreatedAt() == null) customer.setCreatedAt(LocalDateTime.now());
         customer.setUpdatedAt(LocalDateTime.now());
 
@@ -72,11 +69,6 @@ public class CustomerService {
     public Customer getByUserId(String userId) {
         Customer customer = customerRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
-        if (customer.getWalletBalance() == null) {
-            customer.setWalletBalance(INITIAL_CUSTOMER_WALLET);
-            customer.setUpdatedAt(LocalDateTime.now());
-            customer = customerRepository.save(customer);
-        }
         if (customer.getKycStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
             customer.setCreditScore(650 + new java.util.Random().nextInt(251));
             customer.setUpdatedAt(LocalDateTime.now());

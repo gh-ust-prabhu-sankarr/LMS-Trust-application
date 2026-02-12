@@ -68,6 +68,10 @@ export default function AdminDashboard() {
   const paginatedUsers = filteredUsers.slice((userPage - 1) * itemsPerPage, userPage * itemsPerPage);
 
   const handleToggleUser = async (user) => {
+    if (String(user?.role || "").toUpperCase() === "ADMIN") {
+      alert("Admin accounts cannot be suspended.");
+      return;
+    }
     try {
       await adminApi.toggleUserStatus(user.id, !user.active);
       loadData();
@@ -155,7 +159,7 @@ export default function AdminDashboard() {
           <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
             <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                <div className="h-10 w-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg">
                   <Users size={20} />
                 </div>
                 <h3 className="font-bold text-slate-900">System Registry</h3>
@@ -170,7 +174,7 @@ export default function AdminDashboard() {
                     setSearchTerm(e.target.value);
                     setUserPage(1);
                   }}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
                 />
               </div>
             </div>
@@ -189,7 +193,7 @@ export default function AdminDashboard() {
                     <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-8 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs uppercase ${u.role === "OFFICER" ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700"}`}>
+                          <div className="h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs uppercase bg-emerald-100 text-emerald-700">
                             {u.username[0]}
                           </div>
                           <div>
@@ -199,13 +203,24 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td className="px-8 py-4 text-center">
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${u.role === "OFFICER" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase bg-emerald-50 text-emerald-700">
                           {u.role}
                         </span>
                       </td>
                       <td className="px-8 py-4 text-right">
-                        <button onClick={() => handleToggleUser(u)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${u.active ? "border-rose-100 text-rose-500 hover:bg-rose-50" : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"}`}>
-                          {u.active ? "Suspend" : "Activate"}
+                        <button
+                          onClick={() => handleToggleUser(u)}
+                          disabled={String(u.role || "").toUpperCase() === "ADMIN"}
+                          title={String(u.role || "").toUpperCase() === "ADMIN" ? "Admin accounts cannot be suspended." : ""}
+                          className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                            String(u.role || "").toUpperCase() === "ADMIN"
+                              ? "border-slate-200 text-slate-400"
+                              : u.active
+                                ? "border-slate-300 text-slate-700 hover:bg-slate-100"
+                                : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"
+                          }`}
+                        >
+                          {String(u.role || "").toUpperCase() === "ADMIN" ? "Protected" : u.active ? "Suspend" : "Activate"}
                         </button>
                       </td>
                     </tr>
@@ -232,7 +247,7 @@ export default function AdminDashboard() {
           <div className="animate-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm max-w-xl mx-auto">
               <div className="mb-8 flex items-center gap-4">
-                <div className="h-14 w-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
+                <div className="h-14 w-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
                   <ShieldCheck size={32} />
                 </div>
                 <div>
@@ -244,7 +259,7 @@ export default function AdminDashboard() {
                 <Field label="Staff Username" placeholder="officer_01" value={officerForm.username} onChange={(v) => setOfficerForm((p) => ({ ...p, username: v }))} />
                 <Field label="Official Email" placeholder="staff@trumio.com" type="email" value={officerForm.email} onChange={(v) => setOfficerForm((p) => ({ ...p, email: v }))} />
                 <Field label="Temporary Password" type="password" value={officerForm.password} onChange={(v) => setOfficerForm((p) => ({ ...p, password: v }))} />
-                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-amber-600 transition-all">
+                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 transition-all">
                   Create Officer Account
                 </button>
               </form>
@@ -256,7 +271,7 @@ export default function AdminDashboard() {
           <div className="animate-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
               <div className="mb-8 flex items-center gap-4">
-                <div className="h-12 w-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                <div className="h-12 w-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
                   <PackagePlus size={24} />
                 </div>
                 <div>
@@ -285,7 +300,7 @@ export default function AdminDashboard() {
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Market Description</label>
                   <textarea
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 p-4 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 p-4 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
                     placeholder="Provide details about the loan purpose and target audience..."
                     rows={4}
                     value={productForm.description}
@@ -308,7 +323,7 @@ export default function AdminDashboard() {
                   onChange={(v) => setProductForm((p) => ({ ...p, applicationFields: v }))}
                 />
 
-                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-600 transition-all shadow-lg">
+                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 transition-all shadow-lg">
                   {processing ? "Deploying..." : "Publish to Marketplace"}
                 </button>
               </form>
@@ -322,7 +337,7 @@ export default function AdminDashboard() {
 
 function TabButton({ active, onClick, icon, label }) {
   return (
-    <button onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? "bg-white text-indigo-600 shadow-md scale-105" : "text-slate-400 hover:text-slate-600"}`}>
+    <button onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? "bg-white text-emerald-700 shadow-md scale-105" : "text-slate-400 hover:text-slate-600"}`}>
       {icon} {label}
     </button>
   );
@@ -337,7 +352,7 @@ function Field({ label, value, onChange, placeholder, type = "text" }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
       />
     </div>
   );
