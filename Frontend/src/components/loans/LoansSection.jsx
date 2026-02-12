@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, ChevronLeft, ArrowRight, User, GraduationCap, Car, Briefcase, CheckCircle2, RefreshCw, Lock } from "lucide-react";
 import { productApi, unwrap } from "../../api/domainApi.js";
 import { mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
@@ -59,8 +59,6 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
     return list.map(toSlide);
   }, [products]);
 
-  const activeSlide = slides[index] || null;
-
   const loadProducts = async () => {
     setLoading(true);
     setUsingFallback(false);
@@ -86,14 +84,6 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
     if (index > slides.length - 1) setIndex(0);
   }, [slides.length, index]);
 
-  useEffect(() => {
-    if (!slides.length || slides.length === 1) return;
-    const timer = setInterval(() => {
-      setIndex((prev) => (prev >= slides.length - 1 ? 0 : prev + 1));
-    }, 6000);
-    return () => clearInterval(timer);
-  }, [slides.length]);
-
   const handlePrev = () => {
     if (!slides.length) return;
     setIndex((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
@@ -118,9 +108,9 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
   };
 
   return (
-    <section id="loan-section" className="py-20 bg-slate-50 relative overflow-hidden flex flex-col items-center justify-center">
+    <section id="loan-section" className="py-20 bg-gradient-to-b from-white via-slate-50 to-white relative overflow-hidden flex flex-col items-center justify-center">
       <div
-        className="absolute inset-0 opacity-[0.09] pointer-events-none"
+        className="absolute inset-0 opacity-[0.04] pointer-events-none"
         style={{
           backgroundImage:
             "linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)",
@@ -173,23 +163,21 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
         ) : (
           <>
             <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-50px" }} variants={scrollReveal} className="relative w-full overflow-hidden py-4">
-              <motion.div className="flex gap-5" animate={{ x: `calc(12.5% - ${index * 75}% - ${index * 20}px)` }} transition={{ type: "spring", damping: 25, stiffness: 120 }}>
-                {slides.map((slide, i) => {
-                  const isActive = i === index;
-                  return (
-                    <motion.div
-                      key={slide.id || i}
-                      onClick={() => setIndex(i)}
-                      animate={{
-                        scale: isActive ? 1 : 0.85,
-                        opacity: isActive ? 1 : 0.3,
-                        filter: isActive ? "blur(0px)" : "blur(6px)",
-                      }}
-                      whileTap={{ scale: 0.98 }}
-                      className="relative shrink-0 w-[75%] md:w-[65%] lg:w-[800px] h-[420px] md:h-[320px] bg-white border border-slate-200 rounded-[1.5rem]
-                      shadow-[0_20px_50px_-12px_rgba(0,0,0,0.08)]
-                      flex flex-col md:flex-row overflow-hidden cursor-pointer transition-all"
-                    >
+              <motion.div className="flex gap-5 justify-center" animate={{ x: 0 }} transition={{ type: "spring", damping: 25, stiffness: 120 }}>
+                <AnimatePresence mode="wait">
+                  {slides.map((slide, i) => {
+                    const isActive = i === index;
+                    return isActive ? (
+                      <motion.div
+                        key={slide.id || i}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.5, ease: "easeOut" }}
+                        className="relative shrink-0 w-[75%] md:w-[65%] lg:w-[800px] h-[420px] md:h-[320px] bg-white border border-slate-200 rounded-[1.5rem]
+                        shadow-[0_20px_50px_-12px_rgba(0,0,0,0.08)]
+                        flex flex-col md:flex-row overflow-hidden transition-all hover:shadow-2xl"
+                      >
                       <div className={`w-full md:w-[30%] ${slide.color} p-6 md:p-8 flex flex-col justify-between text-white`}>
                         <div>
                           <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center mb-4 shadow-lg">
@@ -212,10 +200,10 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
                       </div>
 
                       <div className="w-full md:w-[70%] p-6 md:p-8 flex flex-col justify-between bg-white">
-                        <div>
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2, duration: 0.5 }}>
                           <p className="text-slate-600 text-sm md:text-base mb-5 max-w-lg leading-relaxed">{slide.desc}</p>
 
-                          <div className="flex flex-wrap gap-3 mb-6">
+                          <motion.div className="flex flex-wrap gap-3 mb-6" variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } }} initial="hidden" animate="visible">
                             {[
                               slide.minCreditScore != null ? `Min CIBIL: ${slide.minCreditScore}` : null,
                               slide.minTenure != null && slide.maxTenure != null ? `Tenure: ${slide.minTenure}-${slide.maxTenure} months` : null,
@@ -223,15 +211,15 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
                             ]
                               .filter(Boolean)
                               .map((tag) => (
-                                <div key={tag} className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
+                                <motion.div key={tag} variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }} className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
                                   <CheckCircle2 size={12} className="text-emerald-500" />
                                   <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{tag}</span>
-                                </div>
+                                </motion.div>
                               ))}
-                          </div>
-                        </div>
+                          </motion.div>
+                        </motion.div>
 
-                        <button
+                        <motion.button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleLearnMore(slide);
@@ -241,6 +229,11 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
                           rounded-lg shadow-md flex items-center gap-2 w-fit transition-all
                           hover:shadow-lg active:scale-95"
                           type="button"
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.3, duration: 0.5 }}
+                          whileHover={{ scale: 1.05, boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }}
+                          whileTap={{ scale: 0.98 }}
                         >
                           {isAuthenticated ? (
                             <>
@@ -252,49 +245,38 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
                               Login to Apply
                             </>
                           )}
-                        </button>
+                        </motion.button>
                       </div>
                     </motion.div>
-                  );
-                })}
+                    ) : null;
+                  })}
+                </AnimatePresence>
               </motion.div>
             </motion.div>
 
-            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={scrollReveal} className="flex flex-col md:flex-row items-center justify-between gap-6 mt-10">
-              <div className="w-full max-w-xs">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Progress</span>
-                  <span className="text-[10px] font-bold text-slate-600">
-                    {index + 1} / {slides.length}
-                  </span>
-                </div>
-                <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                  <motion.div
-                    className={`h-full ${activeSlide?.color || "bg-slate-900"}`}
-                    animate={{ width: `${((index + 1) / slides.length) * 100}%` }}
-                    transition={{ duration: 0.5, ease: "easeInOut" }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
+            <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={scrollReveal} className="flex items-center justify-end gap-3 mt-10">
+              <motion.div className="flex items-center gap-3" initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}>
+                <motion.button
                   onClick={handlePrev}
                   disabled={slides.length <= 1}
                   className="w-11 h-11 rounded-full border-2 border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
                   type="button"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
                 >
                   <ChevronLeft size={20} strokeWidth={2.5} />
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   onClick={handleNext}
                   disabled={slides.length <= 1}
                   className="w-11 h-11 rounded-full border-2 border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
                   type="button"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
                 >
                   <ChevronRight size={20} strokeWidth={2.5} />
-                </button>
-              </div>
+                </motion.button>
+              </motion.div>
             </motion.div>
           </>
         )}

@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.format.DateTimeParseException;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -30,6 +31,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class KycService {
+    private static final DateTimeFormatter KYC_COOLDOWN_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
     private final KycRepository kycRepository; //Database access for KYC entity.
     private final UserRepository userRepository;
@@ -71,8 +73,18 @@ public class KycService {
             saved = kycRepository.save(kyc); //null->dirct save -db
         } else { //count handling...
             int currentCount = existing.getSubmissionCount() == null ? 1 : existing.getSubmissionCount();
+            LocalDateTime now = LocalDateTime.now();
             if (currentCount >= 2) {
-                throw new BusinessException(ErrorCode.KYC_ALREADY_SUBMITTED, "KYC can be submitted only 2 times");
+                LocalDateTime lastSubmittedAt = existing.getSubmittedAt();
+                LocalDateTime nextEligibleAt = (lastSubmittedAt != null ? lastSubmittedAt : now).plusMonths(2);
+                if (now.isBefore(nextEligibleAt)) {
+                    throw new BusinessException(
+                            ErrorCode.KYC_ALREADY_SUBMITTED,
+                            "KYC resubmission is available after " + nextEligibleAt.toLocalDate().format(KYC_COOLDOWN_DATE_FMT)
+                    );
+                }
+                // Cooldown elapsed: start a fresh submission window.
+                currentCount = 0;
             }
             existing.setFullName(request.getFullName().trim());
             existing.setDob(parsedDob);
@@ -83,8 +95,8 @@ public class KycService {
             existing.setRemarks(null);
             existing.setReviewedBy(null);
             existing.setReviewedAt(null);
-            existing.setSubmittedAt(LocalDateTime.now());
-            existing.setUpdatedAt(LocalDateTime.now());
+            existing.setSubmittedAt(now);
+            existing.setUpdatedAt(now);
             saved = kycRepository.save(existing);
         }
 
