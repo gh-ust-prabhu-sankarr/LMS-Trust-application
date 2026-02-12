@@ -41,12 +41,15 @@ public enum ErrorCode {
     INVALID_AMOUNT("PAY_002", "Invalid payment amount", HttpStatus.BAD_REQUEST),
     EMI_NOT_FOUND("PAY_003", "EMI installment not found", HttpStatus.NOT_FOUND),
     INSUFFICIENT_WALLET_BALANCE("PAY_004", "Insufficient wallet balance", HttpStatus.BAD_REQUEST),
-    INSUFFICIENT_WALLET_BALANCE("PAY_004", "Insufficient wallet balance", HttpStatus.BAD_REQUEST),
 
     // Media
     FILE_UPLOAD_FAILED("FILE_001", "File upload failed", HttpStatus.INTERNAL_SERVER_ERROR),
     FILE_NOT_FOUND("FILE_002", "File not found", HttpStatus.NOT_FOUND),
     INVALID_FILE_TYPE("FILE_003", "Invalid file type", HttpStatus.BAD_REQUEST),
+
+
+    //Idempotency
+    DUPLICATE_REQUEST("IDP_001", "Request is currently being processed", HttpStatus.CONFLICT),
 
     // General
     VALIDATION_ERROR("GEN_001", "Validation failed", HttpStatus.BAD_REQUEST),
