@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, ChevronDown, FileText, ShieldCheck, Target } from "lucide-react";
 import Navbar from "../../components/navbar/Navbar.jsx";
+import BackgroundCanvas from "../../components/layout/BackgroundCanvas.jsx";
 import { customerApi, productApi, unwrap } from "../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -188,14 +189,7 @@ export default function LoanDetailsEMI() {
   return (
     <div className="min-h-screen bg-slate-50 relative overflow-x-hidden text-slate-900">
       <Navbar />
-      <div
-        className="absolute inset-0 z-0 pointer-events-none opacity-[0.35]"
-        style={{
-          backgroundImage:
-            "linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      />
+      <BackgroundCanvas />
 
       <div className="relative z-10 max-w-7xl mx-auto px-6 pt-24">
         <div className="pt-8">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, IndianRupee, ShieldCheck, Upload } from "lucide-react";
 import Navbar from "../../../components/navbar/Navbar.jsx";
+import BackgroundCanvas from "../../../components/layout/BackgroundCanvas.jsx";
 import { customerApi, fileApi, loanApi, productApi, unwrap } from "../../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../../utils/loanCatalog.js";
 
@@ -136,12 +137,9 @@ export default function LoanApplication() {
   };
 
   return (
-    <section className="relative min-h-screen w-full bg-[#F8FAFC] flex items-center justify-center p-6 pt-28">
+    <section className="relative min-h-screen w-full bg-slate-50 flex items-center justify-center p-6 pt-28 overflow-hidden">
       <Navbar />
-      <div
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
-        style={{ backgroundImage: "radial-gradient(#0F172A 1px, transparent 1px)", backgroundSize: "30px 30px" }}
-      />
+      <BackgroundCanvas />
 
       <div className="relative z-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-12">
         <div className="lg:col-span-7 flex flex-col justify-center">
