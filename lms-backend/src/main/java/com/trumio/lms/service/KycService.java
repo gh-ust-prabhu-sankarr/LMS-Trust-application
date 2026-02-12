@@ -23,16 +23,15 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.format.DateTimeParseException;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class KycService {
-    private static final int MIN_CREDIT_SCORE = 650;
-    private static final int MAX_CREDIT_SCORE = 900;
+    private static final DateTimeFormatter KYC_COOLDOWN_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
@@ -74,8 +73,18 @@ public class KycService {
             saved = kycRepository.save(kyc);
         } else {
             int currentCount = existing.getSubmissionCount() == null ? 1 : existing.getSubmissionCount();
+            LocalDateTime now = LocalDateTime.now();
             if (currentCount >= 2) {
-                throw new BusinessException(ErrorCode.KYC_ALREADY_SUBMITTED, "KYC can be submitted only 2 times");
+                LocalDateTime lastSubmittedAt = existing.getSubmittedAt();
+                LocalDateTime nextEligibleAt = (lastSubmittedAt != null ? lastSubmittedAt : now).plusMonths(2);
+                if (now.isBefore(nextEligibleAt)) {
+                    throw new BusinessException(
+                            ErrorCode.KYC_ALREADY_SUBMITTED,
+                            "KYC resubmission is available after " + nextEligibleAt.toLocalDate().format(KYC_COOLDOWN_DATE_FMT)
+                    );
+                }
+                // Cooldown elapsed: start a fresh submission window.
+                currentCount = 0;
             }
             existing.setFullName(request.getFullName().trim());
             existing.setDob(parsedDob);
@@ -86,8 +95,8 @@ public class KycService {
             existing.setRemarks(null);
             existing.setReviewedBy(null);
             existing.setReviewedAt(null);
-            existing.setSubmittedAt(LocalDateTime.now());
-            existing.setUpdatedAt(LocalDateTime.now());
+            existing.setSubmittedAt(now);
+            existing.setUpdatedAt(now);
             saved = kycRepository.save(existing);
         }
 
@@ -133,7 +142,7 @@ public class KycService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "KYC not found"));
         return toResponse(kyc);
     }
-//for admin vieww ---pending/approved
+    //for admin vieww ---pending/approved
     public List<KycResponse> getByStatus(KYCStatus status) {
         return kycRepository.findByStatus(status).stream()
                 .map(this::toResponse)
@@ -166,8 +175,7 @@ public class KycService {
         customerRepository.findByUserId(saved.getUserId()).ifPresent(customer -> {
             customer.setKycStatus(saved.getStatus());
             if (saved.getStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
-                int generatedScore = ThreadLocalRandom.current().nextInt(MIN_CREDIT_SCORE, MAX_CREDIT_SCORE + 1);
-                customer.setCreditScore(generatedScore);
+                customer.setCreditScore(650 + new java.util.Random().nextInt(251));
             }
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);

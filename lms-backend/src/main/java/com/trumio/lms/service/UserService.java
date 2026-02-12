@@ -17,8 +17,6 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class UserService {
-    private static final double INITIAL_OFFICER_WALLET = 100_000_000.0; // 10 crore
-
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
@@ -42,7 +40,6 @@ public class UserService {
                 .role(Role.CREDIT_OFFICER)
                 .active(true)
                 .kycStatus(null)
-                .walletBalance(INITIAL_OFFICER_WALLET)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -70,7 +67,6 @@ public class UserService {
                 .role(Role.ADMIN)
                 .active(true)
                 .kycStatus(null)
-                .walletBalance(0.0)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();

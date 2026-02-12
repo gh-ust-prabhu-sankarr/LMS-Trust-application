@@ -8,8 +8,10 @@ package com.trumio.lms.service;
 //import com.loanapp.repository.MediaFileRepository;
 //import com.loanapp.util.ValidationUtil;
 import com.trumio.lms.entity.MediaFile;
+import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
+import com.trumio.lms.repository.LoanApplicationRepository;
 import com.trumio.lms.repository.MediaFileRepository;
 import com.trumio.lms.util.Constants;
 import com.trumio.lms.util.ValidationUtil;
@@ -32,6 +34,7 @@ import java.util.UUID;
 public class MediaFileService {
 
     private final MediaFileRepository mediaFileRepository;
+    private final LoanApplicationRepository loanApplicationRepository;
     private final AuditService auditService;
 
     @Value("${app.file.upload-dir:./uploads}") //Reads value from application.yml / application.propertie
@@ -64,7 +67,8 @@ public class MediaFileService {
 
             // Save metadata to database
             MediaFile mediaFile = MediaFile.builder()
-                    .fileName(filename)
+                    .fileName(originalFilename != null ? originalFilename : filename)
+                    .displayName(originalFilename != null ? originalFilename : filename)
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
                     .storagePath(filePath.toString())
@@ -108,7 +112,44 @@ public class MediaFileService {
      * Get files by entity
      */
     public List<MediaFile> getFilesByEntity(String entityType, String entityId) {
-        return mediaFileRepository.findByEntityTypeAndEntityId(entityType, entityId);
+        List<MediaFile> files = mediaFileRepository.findByEntityTypeAndEntityId(entityType, entityId);
+        
+        // Ensure label-style display names are set for all files.
+        for (int i = 0; i < files.size(); i++) {
+            MediaFile file = files.get(i);
+            file.setDisplayName(generateDisplayName(file, entityType, entityId, i));
+        }
+        
+        return files;
+    }
+
+    /**
+     * Generate display name based on file position and type
+     */
+    private String generateDisplayName(MediaFile file, String entityType, String entityId, int index) {
+        if ("LOAN_APPLICATION".equals(entityType)) {
+            List<String> labels = loanApplicationRepository.findById(entityId)
+                    .map(LoanApplication::getDocuments)
+                    .orElse(null);
+            if (labels != null && index < labels.size() && labels.get(index) != null && !labels.get(index).isBlank()) {
+                return labels.get(index);
+            }
+            return "Document " + (index + 1);
+        }
+
+        String fileName = file.getFileName();
+        if (fileName == null) return "Document";
+        
+        // If it's already a readable name (not UUID), return it
+        if (!fileName.matches("^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}.*")) {
+            return fileName;
+        }
+        
+        if ("KYC_DOCUMENT".equals(entityType)) {
+            return index == 0 ? "PAN Document" : "Aadhaar Document";
+        }
+        
+        return "Document " + (index + 1);
     }
 
     /**

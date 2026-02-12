@@ -43,8 +43,6 @@ public class Customer {
 
     private Integer creditScore;
 
-    private Double walletBalance;
-
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

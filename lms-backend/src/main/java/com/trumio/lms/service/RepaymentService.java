@@ -4,26 +4,27 @@ import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.RepaymentRequest;
 import com.trumio.lms.entity.EMIInstallment;
 import com.trumio.lms.entity.EMISchedule;
-import com.trumio.lms.entity.Customer;
 import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.Repayment;
+import com.trumio.lms.entity.Customer;
+import com.trumio.lms.entity.User;
 import com.trumio.lms.entity.User;
 import com.trumio.lms.entity.enums.EMIStatus;
 import com.trumio.lms.entity.enums.RepaymentStatus;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
-import com.trumio.lms.repository.CustomerRepository;
 import com.trumio.lms.repository.EMIScheduleRepository;
 import com.trumio.lms.repository.LoanApplicationRepository;
 import com.trumio.lms.repository.RepaymentRepository;
+import com.trumio.lms.repository.CustomerRepository;
 import com.trumio.lms.repository.UserRepository;
 import com.trumio.lms.service.mock.PaymentGatewayService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -34,18 +35,26 @@ public class RepaymentService {
     private final LoanApplicationRepository loanApplicationRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
+    private final LoanProductService loanProductService;
     private final PaymentGatewayService paymentGatewayService;
     private final AuditService auditService;
 
     public ApiResponse<Repayment> processRepayment(RepaymentRequest request, String userId) {
         EMISchedule schedule = emiScheduleRepository.findByLoanApplicationId(request.getLoanApplicationId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.EMI_NOT_FOUND));
+        LoanApplication loan = loanApplicationRepository.findById(request.getLoanApplicationId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
+        enrichLoanWithProductName(loan);
+        Customer customer = customerRepository.findById(loan.getCustomerId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
+
+        double amount = request.getAmount() == null ? 0.0 : request.getAmount();
 
         String transactionId;
         try {
             transactionId = paymentGatewayService.processPayment(
                     request.getLoanApplicationId(),
-                    request.getAmount()
+                    amount
             );
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.REPAYMENT_FAILED, "Payment gateway error: " + e.getMessage());
@@ -53,7 +62,7 @@ public class RepaymentService {
 
         Repayment repayment = Repayment.builder()
                 .loanApplicationId(request.getLoanApplicationId())
-                .amount(request.getAmount())
+                .amount(amount)
                 .paymentDate(LocalDateTime.now())
                 .transactionId(transactionId)
                 .status(RepaymentStatus.SUCCESS)
@@ -62,34 +71,10 @@ public class RepaymentService {
 
         Repayment saved = repaymentRepository.save(repayment);
 
-        LoanApplication loan = loanApplicationRepository.findById(request.getLoanApplicationId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
-        Customer borrower = customerRepository.findById(loan.getCustomerId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
-        if (!userId.equals(borrower.getUserId())) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-        }
-
-        double borrowerWallet = borrower.getWalletBalance() == null ? 0.0 : borrower.getWalletBalance();
-        if (borrowerWallet < request.getAmount()) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE);
-        }
-        borrower.setWalletBalance(borrowerWallet - request.getAmount());
-        borrower.setUpdatedAt(LocalDateTime.now());
-        adjustCreditScore(borrower, 5);
-        customerRepository.save(borrower);
-
-        if (loan.getReviewedBy() != null) {
-            userRepository.findById(loan.getReviewedBy()).ifPresent(officer -> {
-                double officerWallet = officer.getWalletBalance() == null ? 0.0 : officer.getWalletBalance();
-                officer.setWalletBalance(officerWallet + request.getAmount());
-                officer.setUpdatedAt(LocalDateTime.now());
-                userRepository.save(officer);
-            });
-        }
-
         // Update EMI schedule
-        updateEMISchedule(schedule, request.getAmount());
+        updateEMISchedule(schedule, amount);
+        adjustCreditScore(customer, amount > 0 ? 5 : 0);
+        customerRepository.save(customer);
 
         auditService.log(userId, "REPAYMENT", "REPAYMENT", saved.getId(),
                 "Repayment of " + request.getAmount());
@@ -126,11 +111,8 @@ public class RepaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.EMI_NOT_FOUND));
         LoanApplication loan = loanApplicationRepository.findById(loanId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
-        Customer borrower = customerRepository.findById(loan.getCustomerId())
+        Customer customer = customerRepository.findById(loan.getCustomerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
-        if (!userId.equals(borrower.getUserId())) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
-        }
 
         Optional<EMIInstallment> firstPending = schedule.getInstallments().stream()
                 .filter(i -> i.getStatus() == EMIStatus.PENDING)
@@ -139,9 +121,8 @@ public class RepaymentService {
             EMIInstallment installment = firstPending.get();
             installment.setStatus(EMIStatus.OVERDUE);
             emiScheduleRepository.save(schedule);
-            adjustCreditScore(borrower, -10);
-            borrower.setUpdatedAt(LocalDateTime.now());
-            customerRepository.save(borrower);
+            adjustCreditScore(customer, -10);
+            customerRepository.save(customer);
             auditService.log(userId, "EMI_MISSED", "EMI", loanId, "EMI marked as missed");
         }
 
@@ -158,5 +139,17 @@ public class RepaymentService {
 
     public List<Repayment> getRepaymentsByLoan(String loanId) {
         return repaymentRepository.findByLoanApplicationId(loanId);
+    }
+
+    private void enrichLoanWithProductName(LoanApplication loan) {
+        if (loan.getLoanProductName() == null || loan.getLoanProductName().isEmpty()) {
+            try {
+                loan.setLoanProductName(loanProductService.getById(loan.getLoanProductId()).getName());
+            } catch (Exception e) {
+                if (loan.getLoanProductName() == null) {
+                    loan.setLoanProductName("Unknown Loan");
+                }
+            }
+        }
     }
 }

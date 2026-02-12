@@ -37,8 +37,6 @@ public class User {
 
     private KYCStatus kycStatus;
 
-    private Double walletBalance;
-
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

@@ -30,6 +30,8 @@ public class LoanApplication {
     @Indexed
     private String loanProductId;
 
+    private String loanProductName;
+
     private Double requestedAmount;
 
     private Double approvedAmount;

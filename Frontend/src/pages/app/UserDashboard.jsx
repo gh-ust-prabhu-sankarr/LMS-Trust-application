@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, kycApi, loanApi } from "../../api/domainApi.js";
+import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmiSchedule } from "../../hooks/useEmiSchedule.js";
 
@@ -18,6 +18,14 @@ const KYC_META = {
   REJECTED: { label: "REJECTED", cls: "bg-rose-50 text-rose-800 border-rose-200" },
 };
 const MAX_KYC_DOC_SIZE_BYTES = 500 * 1024; //size....kb 
+const statusOf = (loan) => String(loan?.status || "").trim().toUpperCase();
+const loanStatusClass = (status) => {
+  const s = String(status || "").toUpperCase();
+  if (s === "CLOSED" || s === "APPROVED") return "bg-emerald-50 text-emerald-800 border-emerald-200";
+  if (s === "UNDER_REVIEW" || s === "SUBMITTED") return "bg-amber-50 text-amber-800 border-amber-200";
+  if (s === "REJECTED") return "bg-rose-50 text-rose-800 border-rose-200";
+  return "bg-slate-100 text-slate-700 border-slate-200";
+};
 
 export default function UserDashboard() {
   const { user } = useAuth();
@@ -26,6 +34,7 @@ export default function UserDashboard() {
   const [activeTab, setActiveTab] = useState("profile"); // profile | kyc | loans | repayments
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [closedLoanIds, setClosedLoanIds] = useState([]);
 
   // --- Data States ---
   const [profile, setProfile] = useState(null);
@@ -44,13 +53,16 @@ export default function UserDashboard() {
   const [panFile, setPanFile] = useState(null);
   const [aadhaarFile, setAadhaarFile] = useState(null);
 
+  // --- EMI Pagination State ---
+  const [emiCurrentPage, setEmiCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
   const [editForm, setEditForm] = useState({
     fullName: "", phone: "", panNumber: "", address: "", employmentType: "", monthlyIncome: "",
   });
   const [kycForm, setKycForm] = useState({
     fullName: "", dob: "", panNumber: "", aadhaarNumber: "",
   });
-  const resolvedWallet = profile?.walletBalance ?? 100000;
   const formatDate = (value) => {
     if (!value) return "-";
     const d = new Date(value);
@@ -63,20 +75,74 @@ export default function UserDashboard() {
     return KYC_META[key] || KYC_META.PENDING;
   }, [myKyc?.status, profile?.kycStatus]);
   const kycSubmissionCount = myKyc?.submissionCount ?? 0;
-  const canResubmitKyc = kycSubmissionCount < 2;
+  const nextKycEligibleAt = useMemo(() => {
+    if (!myKyc?.submittedAt || kycSubmissionCount < 2) return null;
+    const dt = new Date(myKyc.submittedAt);
+    if (Number.isNaN(dt.getTime())) return null;
+    dt.setMonth(dt.getMonth() + 2);
+    return dt;
+  }, [myKyc?.submittedAt, kycSubmissionCount]);
+  const canResubmitKyc = useMemo(() => {
+    if (kycSubmissionCount < 2) return true;
+    if (!nextKycEligibleAt) return false;
+    return new Date() >= nextKycEligibleAt;
+  }, [kycSubmissionCount, nextKycEligibleAt]);
+  const isLoanClosed = (loanId) => closedLoanIds.includes(loanId);
+  const effectiveStatusOf = (loan) => {
+    const raw = statusOf(loan);
+    if ((raw === "ACTIVE" || raw === "DISBURSED") && isLoanClosed(loan?.id)) return "CLOSED";
+    return raw;
+  };
 
   const stats = useMemo(() => {
-    const active = myLoans.filter((l) => l.status === "ACTIVE" || l.status === "DISBURSED").length;
-    const pendingEmiAmount = myLoans
-      .filter((l) => l.status === "ACTIVE" || l.status === "DISBURSED")
-      .reduce((sum, l) => sum + (Number(l.emi) || 0), 0);
+    const active = myLoans.filter((l) => {
+      const s = effectiveStatusOf(l);
+      return s === "ACTIVE" || s === "DISBURSED" || s === "APPROVED";
+    }).length;
+    const closed = myLoans.filter((l) => effectiveStatusOf(l) === "CLOSED").length;
     return { 
-        draft: myLoans.filter((l) => l.status === "DRAFT").length,
-        submitted: myLoans.filter((l) => l.status === "SUBMITTED" || l.status === "UNDER_REVIEW").length,
-        active, 
-        pendingEmiAmount 
+        submitted: myLoans.filter((l) => {
+          const s = statusOf(l);
+          return s === "SUBMITTED" || s === "UNDER_REVIEW";
+        }).length,
+        active,
+        closed
     };
-  }, [myLoans]);
+  }, [myLoans, closedLoanIds]);
+
+  const calculateClosedLoanIds = async (loans) => {
+    const activeLoans = (loans || []).filter((l) => {
+      const s = statusOf(l);
+      return s === "ACTIVE" || s === "DISBURSED" || s === "APPROVED";
+    });
+    if (activeLoans.length === 0) return [];
+
+    const scheduleResults = await Promise.allSettled(
+      activeLoans.map((loan) =>
+        repaymentApi.getSchedule(loan.id).then((res) => ({ loanId: loan.id, scheduleData: res?.data || {} }))
+      )
+    );
+
+    const closedIds = [];
+
+    scheduleResults.forEach((res) => {
+      if (res.status !== "fulfilled") return;
+      const { loanId, scheduleData } = res.value || {};
+      const normalizedSchedule = scheduleData?.data || scheduleData || {};
+      const installments = Array.isArray(normalizedSchedule?.installments) ? normalizedSchedule.installments : [];
+      if (installments.length === 0) return;
+      const allPaid = installments.every((ins) => {
+        const status = String(ins?.status || "").trim().toUpperCase();
+        if (status === "PAID") return true;
+        const totalAmount = Number(ins?.totalAmount || 0);
+        const paidAmount = Number(ins?.paidAmount || 0);
+        return totalAmount > 0 && paidAmount >= totalAmount;
+      });
+      if (allPaid && loanId) closedIds.push(loanId);
+    });
+
+    return closedIds;
+  };
 
   const loadBase = async () => {
     setError("");
@@ -97,7 +163,14 @@ export default function UserDashboard() {
           monthlyIncome: p?.monthlyIncome ?? "",
         });
       }
-      if (loansRes.status === "fulfilled") setMyLoans(loansRes.value.data || []);
+      if (loansRes.status === "fulfilled") {
+        const loans = loansRes.value.data || [];
+        setMyLoans(loans);
+        const closedIds = await calculateClosedLoanIds(loans);
+        setClosedLoanIds(closedIds);
+      } else {
+        setClosedLoanIds([]);
+      }
 
       try {
         const myKycRes = await kycApi.getMyKyc();
@@ -118,6 +191,11 @@ export default function UserDashboard() {
   };
 
   useEffect(() => { loadBase(); }, []);
+
+  // Reset EMI pagination when loan changes
+  useEffect(() => {
+    setEmiCurrentPage(1);
+  }, [activeLoanId]);
 
   const saveProfile = async () => {
     setEditError("");
@@ -165,8 +243,54 @@ export default function UserDashboard() {
     finally { setSaving(false); }
   };
 
+  const convertDateToIso = (dateStr) => {
+    if (!dateStr) return "";
+    // If already in yyyy-MM-dd format, return as-is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    // If in dd-MM-yyyy format, convert to yyyy-MM-dd
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+      const [day, month, year] = dateStr.split("-");
+      return `${year}-${month}-${day}`;
+    }
+    // Try to parse as Date object and return ISO format
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split("T")[0];
+    }
+    return dateStr;
+  };
+
   const submitKyc = async () => {
-    setKycError("");  //pdf validation -----
+    setKycError("");
+    
+    // Validate form fields
+    if (!kycForm.fullName?.trim()) {
+      return setKycError("Full name is required");
+    }
+    if (!kycForm.dob?.trim()) {
+      return setKycError("Date of birth is required");
+    }
+    
+    const isoDate = convertDateToIso(kycForm.dob);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+      return setKycError("Date of birth must be in yyyy-MM-dd format (e.g., 2002-05-14)");
+    }
+    
+    if (!kycForm.panNumber?.trim()) {
+      return setKycError("PAN number is required");
+    }
+    const panUpper = kycForm.panNumber.toUpperCase();
+    if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panUpper)) {
+      return setKycError("PAN format must be ABCDE1234F (5 letters, 4 digits, 1 letter)");
+    }
+    if (!kycForm.aadhaarNumber?.trim()) {
+      return setKycError("Aadhaar number is required");
+    }
+    if (!/^\d{12}$/.test(kycForm.aadhaarNumber)) {
+      return setKycError("Aadhaar must be exactly 12 digits");
+    }
+
+    // Validate PDF files
     const validatePdf = (file, label) => {
       if (!file) return `${label} PDF is required`;
       if (file.type !== "application/pdf") return `${label} must be a PDF`;
@@ -179,7 +303,7 @@ export default function UserDashboard() {
 
     try {
       setKycSubmitting(true);
-      await kycApi.submit({ ...kycForm, panNumber: kycForm.panNumber?.toUpperCase() }, panFile, aadhaarFile);
+      await kycApi.submit({ ...kycForm, panNumber: panUpper, dob: isoDate }, panFile, aadhaarFile);
       setKycEditing(false);
       setPanFile(null);
       setAadhaarFile(null);
@@ -209,7 +333,9 @@ export default function UserDashboard() {
     <button
       onClick={() => setActiveTab(id)}
       className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-        activeTab === id ? "bg-slate-900 text-white shadow-md" : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
+        activeTab === id
+          ? "bg-emerald-600 text-white shadow-md ring-2 ring-emerald-100"
+          : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700"
       }`}
     >
       {label}
@@ -220,22 +346,22 @@ export default function UserDashboard() {
     <PortalShell title="Customer Portal" subtitle="Unified workspace for your finances.">
       
       {/* --- TAB NAVIGATION --- */}
-      <div className="flex flex-wrap gap-2 mb-8 border-b border-slate-200 pb-4">
+      <div className="mb-8 flex flex-wrap gap-2 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50/70 to-white p-3">
         <TabButton id="profile" label="Details" />
         <TabButton id="kyc" label="KYC Verification" />
         <TabButton id="loans" label="My Loans" />
         <TabButton id="repayments" label="Repayments & Docs" />
       </div>
 
-      {error && <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+      {error && <div className="mb-6 rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-800 shadow-sm">{error}</div>}
 
       {/* --- SECTION 1: PROFILE --- */}
       {activeTab === "profile" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
-          <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-6 md:p-8">
+          <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-slate-900">Personal Information</h2>
-              <button onClick={() => (editing ? setEditing(false) : setEditing(true))} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-slate-300">
+              <button onClick={() => (editing ? setEditing(false) : setEditing(true))} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors">
                 {editing ? "Cancel" : "Edit"}
               </button>
             </div>
@@ -248,7 +374,6 @@ export default function UserDashboard() {
                 <Info label="Income" value={money(profile?.monthlyIncome)} />
                 <Info label="Employment" value={profile?.employmentType} />
                 <Info label="Credit Score" value={profile?.creditScore} />
-                <Info label="Wallet Balance" value={money(resolvedWallet)} />
                 <Info label="Address" value={profile?.address} wide />
               </div>
             ) : (
@@ -279,26 +404,25 @@ export default function UserDashboard() {
                   />
                 </Field>
                 <Field label="Address" wide><input value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" /></Field>
-                <div className="md:col-span-2"><button onClick={saveProfile} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase">{saving ? "Saving..." : "Save Profile"}</button></div>
+                <div className="md:col-span-2"><button onClick={saveProfile} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-700 transition-colors">{saving ? "Saving..." : "Save Profile"}</button></div>
               </div>
             )}
           </div>
           <div className="space-y-4">
-             <StatCard label="Monthly EMI" value={money(stats.pendingEmiAmount)} />
+             <StatCard label="KYC Status" value={kycStatusMeta.label} valueClassName="text-xl" />
              <StatCard label="Credit Score" value={profile?.creditScore ?? "-"} />
-             <StatCard label="Wallet" value={money(resolvedWallet)} />
           </div>
         </div>
       )}
 
       {/* --- SECTION 2: KYC --- */}
       {activeTab === "kyc" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 animate-in fade-in duration-500">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm animate-in fade-in duration-500">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-slate-900">Verification Status</h2>
             <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${kycStatusMeta.cls}`}>{kycStatusMeta.label}</span>
           </div>
-          {kycError && <div className="mb-4 text-sm text-rose-600">{kycError}</div>}
+          {kycError && <div className="mb-4 text-sm text-slate-700">{kycError}</div>}
 
           {myKyc && !kycEditing ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -318,7 +442,10 @@ export default function UserDashboard() {
                     Edit and Resubmit KYC
                   </button>
                 ) : (
-                  <p className="text-xs text-slate-500">KYC submission limit reached (2/2).</p>
+                  <p className="text-xs text-slate-500">
+                    KYC submission limit reached (2/2). You can apply again after{" "}
+                    {nextKycEligibleAt ? nextKycEligibleAt.toLocaleDateString("en-IN") : "2 months"}.
+                  </p>
                 )}
               </div>
             </div>
@@ -330,8 +457,20 @@ export default function UserDashboard() {
               <Field label="Aadhaar"><input value={kycForm.aadhaarNumber} onChange={(e) => setKycForm({...kycForm, aadhaarNumber: e.target.value})} className="w-full border rounded-xl p-2" /></Field>
               <Field label="PAN Card (PDF)"><input type="file" accept="application/pdf" onChange={(e) => setPanFile(e.target.files[0])} className="w-full text-xs" /></Field> //pdf onlyyy
               <Field label="Aadhaar (PDF)"><input type="file" accept="application/pdf" onChange={(e) => setAadhaarFile(e.target.files[0])} className="w-full text-xs" /></Field>
+              {!canResubmitKyc && (
+                <div className="md:col-span-2 text-xs text-slate-500">
+                  KYC resubmission is locked until{" "}
+                  {nextKycEligibleAt ? nextKycEligibleAt.toLocaleDateString("en-IN") : "2 months after last submission"}.
+                </div>
+              )}
               <div className="md:col-span-2 flex gap-2">
-                <button onClick={submitKyc} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase">{kycSubmitting ? "Uploading..." : myKyc ? "Resubmit Verification" : "Submit Verification"}</button>
+                <button
+                  onClick={submitKyc}
+                  disabled={!canResubmitKyc}
+                  className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {kycSubmitting ? "Uploading..." : myKyc ? "Resubmit Verification" : "Submit Verification"}
+                </button>
                 {myKyc ? (
                   <button onClick={() => setKycEditing(false)} className="px-6 py-2 rounded-xl text-[10px] font-black uppercase border border-slate-300">Cancel</button>
                 ) : null}
@@ -347,19 +486,19 @@ export default function UserDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard label="In Review" value={stats.submitted} />
             <StatCard label="Active" value={stats.active} />
-            <StatCard label="Drafts" value={stats.draft} />
+            <StatCard label="Closed" value={stats.closed} />
           </div>
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-500">
-                <tr><th className="p-4">Loan ID</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
+                <tr><th className="p-4">Loan Type</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {myLoans.map(loan => (
-                  <tr key={loan.id}>
-                    <td className="p-4 font-mono">{loan.id.slice(-8)}</td>
+                  <tr key={loan.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-4 font-medium">{loan.loanProductName || 'Unknown Loan'}</td>
                     <td className="p-4">{money(loan.requestedAmount)}</td>
-                    <td className="p-4"><span className="px-2 py-1 rounded-md bg-slate-100 text-[10px] font-bold">{loan.status}</span></td>
+                    <td className="p-4"><span className={`px-2 py-1 rounded-md border text-[10px] font-bold ${loanStatusClass(effectiveStatusOf(loan))}`}>{effectiveStatusOf(loan)}</span></td>
                     <td className="p-4"><button onClick={() => { setActiveLoanId(loan.id); setActiveTab("repayments"); }} className="text-emerald-700 font-bold hover:underline">View Details</button></td>
                   </tr>
                 ))}
@@ -373,75 +512,104 @@ export default function UserDashboard() {
       {activeTab === "repayments" && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in duration-500">
           <div className="xl:col-span-1 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <h3 className="text-xs font-black uppercase mb-4">Select Loan</h3>
                 <select value={activeLoanId} onChange={(e) => setActiveLoanId(e.target.value)} className="w-full rounded-xl border-slate-300 text-sm">
                   <option value="">Choose a loan...</option>
-                  {myLoans.map(l => <option key={l.id} value={l.id}>{l.id.slice(-8)} ({l.status})</option>)}
+                  {myLoans.map(l => <option key={l.id} value={l.id}>{l.loanProductName || 'Unknown Loan'} ({effectiveStatusOf(l)})</option>)}
                 </select>
             </div>
-            <div className="bg-white p-6 rounded-2xl border border-slate-200">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <h3 className="text-xs font-black uppercase mb-4">Documents</h3>
                 {docs.length === 0 ? <p className="text-xs text-slate-400">No documents found.</p> : docs.map(d => (
                   <div key={d.id} className="flex justify-between items-center text-xs py-2 border-b last:border-0">
-                    <span className="truncate mr-2">{d.fileName}</span>
-                    <button onClick={() => handleFileDownload(d.id, d.fileName)} className="text-emerald-700 font-bold">Get</button>
+                    <span className="truncate mr-2">{d.displayName || d.fileName}</span>
+                    <button onClick={() => handleFileDownload(d.id, d.displayName || d.fileName)} className="text-emerald-700 font-bold">Download</button>
                   </div>
                 ))}
             </div>
           </div>
 
           <div className="xl:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-black uppercase mb-4">EMI Schedule</h3>
-              {actionError && <div className="mb-4 text-sm text-rose-600">{actionError}</div>}
-              {!schedule ? <p className="text-sm text-slate-400">Select an active loan to see the schedule.</p> : (
-                <div className="space-y-3">
-                  {schedule.installments?.map((ins, idx) => (
-                    <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl text-sm">
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-bold">EMI #{ins.installmentNumber ?? ins.emiNumber ?? idx + 1}</span>
-                          <span className="text-slate-500 text-xs">Due: {formatDate(ins.dueDate)}</span>
-                          <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full border ${
-                            ins.status === "PAID"
-                              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                              : ins.status === "PARTIAL"
-                              ? "bg-amber-50 text-amber-800 border-amber-200"
-                              : ins.status === "OVERDUE"
-                              ? "bg-rose-50 text-rose-700 border-rose-200"
-                              : "bg-slate-50 text-slate-600 border-slate-200"
-                          }`}>
-                            {ins.status || "PENDING"}
-                          </span>
+              {actionError && <div className="mb-4 text-sm text-slate-700">{actionError}</div>}
+              {!schedule ? <p className="text-sm text-slate-400">Select an active loan to see the schedule.</p> : (() => {
+                const totalInstallments = schedule.installments?.length || 0;
+                const totalPages = Math.ceil(totalInstallments / ITEMS_PER_PAGE);
+                const startIdx = (emiCurrentPage - 1) * ITEMS_PER_PAGE;
+                const paginatedInstallments = schedule.installments?.slice(startIdx, startIdx + ITEMS_PER_PAGE) || [];
+                
+                return (
+                  <div className="space-y-3">
+                    {paginatedInstallments.map((ins, idx) => (
+                      <div key={startIdx + idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl text-sm">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold">EMI #{ins.installmentNumber ?? ins.emiNumber ?? startIdx + idx + 1}</span>
+                            <span className="text-slate-500 text-xs">Due: {formatDate(ins.dueDate)}</span>
+                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full border ${
+                              ins.status === "PAID"
+                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                : ins.status === "PARTIAL"
+                                ? "bg-slate-100 text-slate-700 border-slate-200"
+                                : ins.status === "OVERDUE"
+                                ? "bg-slate-100 text-slate-700 border-slate-200"
+                                : "bg-slate-50 text-slate-600 border-slate-200"
+                            }`}>
+                              {ins.status || "PENDING"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            Paid: {money(ins.paidAmount)}{ins.paidDate ? ` on ${formatDate(ins.paidDate)}` : ""}
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          Paid: {money(ins.paidAmount)}{ins.paidDate ? ` on ${formatDate(ins.paidDate)}` : ""}
-                        </div>
-                      </div>
-                        <div className="flex items-center gap-3">
-                          <div className="font-bold text-slate-900">{money(ins.totalAmount)}</div>
+                          <div className="flex items-center gap-3">
+                            <div className="font-bold text-slate-900">{money(ins.totalAmount)}</div>
+                            <button
+                            onClick={() => handlePayInstallment(ins)}
+                            disabled={actionBusy || ins.status === "PAID"}
+                            className={`px-3 py-1 text-xs rounded ${
+                              ins.status === "PAID" ? "bg-slate-200 text-slate-500" : "bg-emerald-600 text-white"
+                            }`}
+                          >
+                            Pay
+                          </button>
                           <button
-                          onClick={() => handlePayInstallment(ins)}
-                          disabled={actionBusy || ins.status === "PAID"}
-                          className={`px-3 py-1 text-xs rounded ${
-                            ins.status === "PAID" ? "bg-slate-200 text-slate-500" : "bg-emerald-600 text-white"
-                          }`}
-                        >
-                          Pay
-                        </button>
+                            onClick={handleMissInstallment}
+                            disabled={actionBusy || ins.status === "PAID"}
+                            className="px-3 py-1 text-xs rounded border border-slate-300 text-slate-700"
+                          >
+                            Miss
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {totalPages > 1 && (
+                      <div className="flex justify-center items-center gap-2 mt-4 pt-4 border-t">
                         <button
-                          onClick={handleMissInstallment}
-                          disabled={actionBusy || ins.status === "PAID"}
-                          className="px-3 py-1 text-xs rounded border border-rose-300 text-rose-700"
+                          onClick={() => setEmiCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={emiCurrentPage === 1}
+                          className="px-3 py-1 text-xs rounded border border-slate-300 disabled:opacity-50"
                         >
-                          Miss
+                          ← Prev
+                        </button>
+                        <span className="text-xs text-slate-600">
+                          Page <span className="font-bold">{emiCurrentPage}</span> of <span className="font-bold">{totalPages}</span>
+                        </span>
+                        <button
+                          onClick={() => setEmiCurrentPage(p => Math.min(totalPages, p + 1))}
+                          disabled={emiCurrentPage === totalPages}
+                          className="px-3 py-1 text-xs rounded border border-slate-300 disabled:opacity-50"
+                        >
+                          Next →
                         </button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -451,18 +619,19 @@ export default function UserDashboard() {
 }
 
 // --- Internal UI Components ---
-function StatCard({ label, value }) {
+function StatCard({ label, value, valueClassName = "text-2xl" }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+      <div className="h-1.5 w-10 rounded-full bg-emerald-500 mb-3" />
       <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</div>
-      <div className="text-2xl font-bold text-slate-900 mt-1">{value}</div>
+      <div className={`${valueClassName} font-bold text-slate-900 mt-1`}>{value}</div>
     </div>
   );
 }
 
 function Info({ label, value, wide }) {
   return (
-    <div className={`${wide ? "md:col-span-2" : ""} rounded-xl border border-slate-100 bg-slate-50/50 p-4`}>
+    <div className={`${wide ? "md:col-span-2" : ""} rounded-xl border border-slate-100 bg-slate-50/60 p-4 hover:bg-slate-50 transition-colors`}>
       <div className="text-[9px] uppercase tracking-widest font-black text-slate-400">{label}</div>
       <div className="text-sm font-semibold text-slate-800 mt-1">{value || "-"}</div>
     </div>

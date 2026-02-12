@@ -33,12 +33,10 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class LoanWorkflowService {
-
-    private static final double INITIAL_OFFICER_WALLET = 100_000_000.0;
-
     private final LoanApplicationRepository loanApplicationRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
+    private final LoanProductService loanProductService;
     private final EMIService emiService;
     private final AuditService auditService;
 
@@ -67,17 +65,6 @@ public class LoanWorkflowService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
 
         double amount = request.getApprovedAmount() == null ? 0.0 : request.getApprovedAmount();
-        double officerBalance = officer.getWalletBalance() == null ? INITIAL_OFFICER_WALLET : officer.getWalletBalance();
-        double customerBalance = customer.getWalletBalance() == null ? 0.0 : customer.getWalletBalance();
-
-        if (officerBalance < amount) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Officer wallet balance is insufficient");
-        }
-
-        officer.setWalletBalance(officerBalance - amount);
-        customer.setWalletBalance(customerBalance + amount);
-        userRepository.save(officer);
-        customerRepository.save(customer);
 
         loan.setStatus(LoanStatus.APPROVED);
         loan.setApprovedAmount(request.getApprovedAmount());
@@ -152,8 +139,22 @@ public class LoanWorkflowService {
     }
 
     private LoanApplication getLoan(String loanId) {
-        return loanApplicationRepository.findById(loanId)
+        LoanApplication loan = loanApplicationRepository.findById(loanId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
+        enrichLoanWithProductName(loan);
+        return loan;
+    }
+
+    private void enrichLoanWithProductName(LoanApplication loan) {
+        if (loan.getLoanProductName() == null || loan.getLoanProductName().isEmpty()) {
+            try {
+                loan.setLoanProductName(loanProductService.getById(loan.getLoanProductId()).getName());
+            } catch (Exception e) {
+                if (loan.getLoanProductName() == null) {
+                    loan.setLoanProductName("Unknown Loan");
+                }
+            }
+        }
     }
 
     private String getCurrentUserId() {

@@ -69,18 +69,13 @@ public class LoanApplicationService {
             throw new BusinessException(ErrorCode.INSUFFICIENT_CREDIT_SCORE);
         }
 
-        // Block same product if already in progress/approved/active
-        List<LoanStatus> blockedStatuses = Arrays.asList(
-                LoanStatus.SUBMITTED,
-                LoanStatus.UNDER_REVIEW,
-                LoanStatus.APPROVED,
-                LoanStatus.DISBURSED,
-                LoanStatus.ACTIVE
-        );
+        // Block same product if already applied (regardless of status)
+        // User can apply for each loan type only once
         List<LoanApplication> existingSameProduct = loanApplicationRepository
-                .findByCustomerIdAndLoanProductIdAndStatusIn(customer.getId(), product.getId(), blockedStatuses);
+                .findByCustomerIdAndLoanProductId(customer.getId(), product.getId());
         if (!existingSameProduct.isEmpty()) {
-            throw new BusinessException(ErrorCode.LOAN_ALREADY_EXISTS, "Loan already exists for this product");
+            throw new BusinessException(ErrorCode.LOAN_ALREADY_EXISTS, 
+                    "You have already applied for this loan type. Only one application per loan type is allowed.");
         }
 
         // Calculate EMI
@@ -93,6 +88,7 @@ public class LoanApplicationService {
         LoanApplication application = LoanApplication.builder()
                 .customerId(customer.getId())
                 .loanProductId(product.getId())
+                .loanProductName(product.getName())
                 .requestedAmount(request.getRequestedAmount())
                 .tenure(request.getTenure())
                 .interestRate(product.getInterestRate())
@@ -135,7 +131,8 @@ public class LoanApplicationService {
     }
 
     public List<LoanApplication> getCustomerLoans(String customerId) {
-        return loanApplicationRepository.findByCustomerId(customerId);
+        List<LoanApplication> loans = loanApplicationRepository.findByCustomerId(customerId);
+        return enrichLoansWithProductNames(loans);
     }
 
     public List<LoanApplication> getMyLoans() {
@@ -144,11 +141,35 @@ public class LoanApplicationService {
     }
 
     public LoanApplication getLoanById(String loanId) {
-        return loanApplicationRepository.findById(loanId)
+        LoanApplication loan = loanApplicationRepository.findById(loanId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
+        enrichLoanWithProductName(loan);
+        return loan;
     }
 
     public List<LoanApplication> getLoansByStatus(LoanStatus status) {
-        return loanApplicationRepository.findByStatus(status);
+        List<LoanApplication> loans = loanApplicationRepository.findByStatus(status);
+        return enrichLoansWithProductNames(loans);
+    }
+
+    private List<LoanApplication> enrichLoansWithProductNames(List<LoanApplication> loans) {
+        for (LoanApplication loan : loans) {
+            enrichLoanWithProductName(loan);
+        }
+        return loans;
+    }
+
+    private void enrichLoanWithProductName(LoanApplication loan) {
+        if (loan.getLoanProductName() == null || loan.getLoanProductName().isEmpty()) {
+            try {
+                LoanProduct product = loanProductService.getById(loan.getLoanProductId());
+                loan.setLoanProductName(product.getName());
+            } catch (Exception e) {
+                // If product not found, keep unknown or set default
+                if (loan.getLoanProductName() == null) {
+                    loan.setLoanProductName("Unknown Loan");
+                }
+            }
+        }
     }
 }

@@ -1,6 +1,4 @@
 import React from "react";
-import { Landmark } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../navbar/Navbar";
 export default function AuthShell({
   title = "Login to LoanBank",
@@ -10,20 +8,18 @@ export default function AuthShell({
   cardMaxWidth = "max-w-md",
   compact = false,
 }) {
-  const navigate = useNavigate();
-
   return (
   
     <div className="min-h-screen bg-slate-50">
       <Navbar></Navbar>
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-        <div className="relative flex items-center justify-center px-10 py-16">
+        <div className="relative hidden lg:flex items-center justify-center px-10 py-16">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 via-white to-orange-50" />
           <div className="absolute -top-40 -left-40 h-[500px] w-[500px] rounded-full bg-emerald-200/30 blur-[120px]" />
           <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-orange-200/30 blur-[120px]" />
 
           <div className="relative max-w-md">
-            <div
+            {/* <div
               onClick={() => navigate("/")}
               className="flex items-center gap-3 cursor-pointer group mb-10"
             >
@@ -38,7 +34,7 @@ export default function AuthShell({
                   Global Banking
                 </span>
               </div>
-            </div>
+            </div> */}
 
             <h1
               className={`${
@@ -71,7 +67,7 @@ export default function AuthShell({
           </div>
         </div>
 
-        <div className="flex items-center justify-center px-6 py-12">
+        <div className="flex items-center justify-center px-6 py-12 lg:px-10 lg:py-16">
           <div className={`w-full ${cardMaxWidth}`}>
             <div className="mb-6 flex items-center justify-between">
               <div className="text-lg font-black tracking-tight text-slate-900"></div>
