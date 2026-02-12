@@ -37,9 +37,6 @@ public class User {
 
     private KYCStatus kycStatus;
 
-    // Wallet balance in INR
-    private Double walletBalance;
-
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
