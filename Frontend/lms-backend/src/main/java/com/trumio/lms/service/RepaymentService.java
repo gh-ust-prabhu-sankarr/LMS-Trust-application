@@ -35,6 +35,7 @@ public class RepaymentService {
     private final LoanApplicationRepository loanApplicationRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
+    private final LoanProductService loanProductService;
     private final PaymentGatewayService paymentGatewayService;
     private final AuditService auditService;
 
@@ -43,13 +44,11 @@ public class RepaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.EMI_NOT_FOUND));
         LoanApplication loan = loanApplicationRepository.findById(request.getLoanApplicationId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
+        enrichLoanWithProductName(loan);
         Customer customer = customerRepository.findById(loan.getCustomerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
+        
         double amount = request.getAmount() == null ? 0.0 : request.getAmount();
-        if (customer.getWalletBalance() == null) customer.setWalletBalance(0.0);
-        if (customer.getWalletBalance() < amount) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Customer wallet balance is insufficient");
-        }
 
         String transactionId;
         try {
@@ -74,7 +73,6 @@ public class RepaymentService {
 
         // Update EMI schedule
         updateEMISchedule(schedule, amount);
-        applyWalletTransfer(loan, customer, amount);
         adjustCreditScore(customer, amount > 0 ? 5 : 0);
         customerRepository.save(customer);
 
@@ -131,19 +129,6 @@ public class RepaymentService {
         return ApiResponse.success("EMI marked as missed", schedule);
     }
 
-    private void applyWalletTransfer(LoanApplication loan, Customer customer, double amount) {
-        if (amount <= 0) return;
-        customer.setWalletBalance(customer.getWalletBalance() - amount);
-        if (loan.getReviewedBy() != null) {
-            User officer = userRepository.findById(loan.getReviewedBy()).orElse(null);
-            if (officer != null) {
-                double balance = officer.getWalletBalance() == null ? 0.0 : officer.getWalletBalance();
-                officer.setWalletBalance(balance + amount);
-                userRepository.save(officer);
-            }
-        }
-    }
-
     private void adjustCreditScore(Customer customer, int delta) {
         int current = customer.getCreditScore() == null ? 650 : customer.getCreditScore();
         int next = current + delta;
@@ -154,5 +139,17 @@ public class RepaymentService {
 
     public List<Repayment> getRepaymentsByLoan(String loanId) {
         return repaymentRepository.findByLoanApplicationId(loanId);
+    }
+
+    private void enrichLoanWithProductName(LoanApplication loan) {
+        if (loan.getLoanProductName() == null || loan.getLoanProductName().isEmpty()) {
+            try {
+                loan.setLoanProductName(loanProductService.getById(loan.getLoanProductId()).getName());
+            } catch (Exception e) {
+                if (loan.getLoanProductName() == null) {
+                    loan.setLoanProductName("Unknown Loan");
+                }
+            }
+        }
     }
 }

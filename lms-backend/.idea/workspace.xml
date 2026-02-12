@@ -28,23 +28,6 @@
       <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/app/UserDashboard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/app/UserDashboard.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/loans/LoanDetailsEMI.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/loans/LoanDetailsEMI.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/officer/OfficerDashboard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/officer/OfficerDashboard.jsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/LoanManagementSystemApplication.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/LoanManagementSystemApplication.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/UserProfileResponse.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/UserProfileResponse.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/Customer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/Customer.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/LoanApplication.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/LoanApplication.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/MediaFile.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/MediaFile.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/User.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/User.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/exception/ErrorCode.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/exception/ErrorCode.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/LoanApplicationRepository.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/LoanApplicationRepository.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuthService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuthService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/CustomerService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/CustomerService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/KycService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/KycService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanApplicationService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanApplicationService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanWorkflowService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanWorkflowService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/MediaFileService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/MediaFileService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/RepaymentService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/RepaymentService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/UserService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/UserService.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

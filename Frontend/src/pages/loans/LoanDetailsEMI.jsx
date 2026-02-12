@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, ChevronDown, FileText, ShieldCheck, Target } from "lucide-react";
 import Navbar from "../../components/navbar/Navbar.jsx";
-import { customerApi, productApi, unwrap } from "../../api/domainApi.js";
+import { customerApi, loanApi, productApi, unwrap } from "../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
@@ -96,6 +96,7 @@ export default function LoanDetailsEMI() {
   const [amount, setAmount] = useState(0);
   const [rate, setRate] = useState(0);
   const [tenureYears, setTenureYears] = useState(1);
+  const [myLoans, setMyLoans] = useState([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -116,6 +117,22 @@ export default function LoanDetailsEMI() {
     };
     load();
   }, []);
+
+  // Load user's loans to check if they've already applied
+  useEffect(() => {
+    const loadMyLoans = async () => {
+      if (isAuthenticated) {
+        try {
+          const res = await loanApi.getMyLoans();
+          const loans = unwrap(res) || res?.data || [];
+          setMyLoans(Array.isArray(loans) ? loans.filter(loan => loan.status !== "DRAFT") : []);
+        } catch {
+          setMyLoans([]);
+        }
+      }
+    };
+    loadMyLoans();
+  }, [isAuthenticated]);
 
   const activeLoan = useMemo(() => loans.find((loan) => loan.slug === slug) || loans[0], [loans, slug]);
   const theme = THEME_STYLES[activeLoan?.colorTheme] || THEME_STYLES.slate;
@@ -139,11 +156,22 @@ export default function LoanDetailsEMI() {
     calcRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // Check if user has already applied for this loan type
+  const hasAlreadyApplied = useMemo(() => {
+    return myLoans.some(loan => loan.loanProductId === activeLoan?.id);
+  }, [myLoans, activeLoan]);
+
   const handleProceedToApplication = async () => {
     if (!isAuthenticated) {
       navigate("/login");
       return;
     }
+
+    if (hasAlreadyApplied) {
+      alert("You have already applied for this loan type. Only one application per loan type is allowed.");
+      return;
+    }
+
     try {
       const profileRes = await customerApi.getMyProfile();
       const profile = unwrap(profileRes) || profileRes?.data;
@@ -374,9 +402,10 @@ export default function LoanDetailsEMI() {
 
                 <button
                   onClick={handleProceedToApplication}
-                  className={`w-full py-4 bg-slate-900 text-white font-black uppercase text-[10px] tracking-[0.2em] rounded-xl ${theme.hover} transition-all active:scale-95 shadow-lg`}
+                  disabled={hasAlreadyApplied}
+                  className={`w-full py-4 ${hasAlreadyApplied ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 ' + theme.hover} text-white font-black uppercase text-[10px] tracking-[0.2em] rounded-xl transition-all active:scale-95 shadow-lg`}
                 >
-                  {activeLoan.ctaText}
+                  {hasAlreadyApplied ? "Already Applied" : (activeLoan.ctaText || "Apply Now")}
                 </button>
               </div>
             </div>
