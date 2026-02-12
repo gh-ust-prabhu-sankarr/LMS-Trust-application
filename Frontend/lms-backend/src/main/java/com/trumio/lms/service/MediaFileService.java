@@ -66,14 +66,9 @@ public class MediaFileService {
             Files.copy(file.getInputStream(), filePath);//saving to upload  Give me a stream of bytes from the uploaded file.
 
             // Save metadata to database
-<<<<<<< HEAD
-            MediaFile mediaFile = MediaFile.builder() //.builder() is used to create object cleanly.
-                    .fileName(filename)
-=======
             MediaFile mediaFile = MediaFile.builder()
                     .fileName(originalFilename != null ? originalFilename : filename)
                     .displayName(originalFilename != null ? originalFilename : filename)
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
                     .storagePath(filePath.toString())

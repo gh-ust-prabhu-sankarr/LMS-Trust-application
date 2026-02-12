@@ -49,15 +49,6 @@ public class RepaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
         
         double amount = request.getAmount() == null ? 0.0 : request.getAmount();
-<<<<<<< HEAD
-
-        // Check if customer has enough balance
-        if (customer.getWalletBalance() == null) customer.setWalletBalance(0.0);
-        if (customer.getWalletBalance() < amount) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Customer wallet balance is insufficient");
-        }
-=======
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
 
         String transactionId;
         try {
@@ -139,23 +130,6 @@ public class RepaymentService {
         return ApiResponse.success("EMI marked as missed", schedule);
     }
 
-<<<<<<< HEAD
-    private void applyWalletTransfer(LoanApplication loan, Customer customer, double amount) {
-        if (amount <= 0) return;
-        customer.setWalletBalance(customer.getWalletBalance() - amount);
-        if (loan.getReviewedBy() != null) {
-            User officer = userRepository.findById(loan.getReviewedBy()).orElse(null);
-            // Credit officer wallet
-            if (officer != null) {
-                double balance = officer.getWalletBalance() == null ? 0.0 : officer.getWalletBalance();
-                officer.setWalletBalance(balance + amount);
-                userRepository.save(officer);
-            }
-        }
-    }
-//credit score changes/....+5 ---10
-=======
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
     private void adjustCreditScore(Customer customer, int delta) {
         int current = customer.getCreditScore() == null ? 650 : customer.getCreditScore();
         int next = current + delta;
