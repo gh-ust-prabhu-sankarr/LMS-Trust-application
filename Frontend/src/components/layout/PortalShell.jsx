@@ -1,6 +1,6 @@
 import Navbar from "../navbar/Navbar.jsx";
 import BackgroundCanvas from "./BackgroundCanvas.jsx";
-
+//for dashboard and admin panel and officer panel
 export default function PortalShell({ title, subtitle, children }) {
   return (
     <div className="relative min-h-screen bg-slate-50 overflow-hidden">

@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KycService {
 
-    private final KycRepository kycRepository;
+    private final KycRepository kycRepository; //Database access for KYC entity.
     private final UserRepository userRepository;
     private final CustomerRepository customerRepository;
     private final AuditService auditService;
@@ -42,7 +42,7 @@ public class KycService {
             MultipartFile panDocument,
             MultipartFile aadhaarDocument) {
         User user = getCurrentUser();
-        Optional<Kyc> existingOpt = kycRepository.findByUserId(user.getId());
+        Optional<Kyc> existingOpt = kycRepository.findByUserId(user.getId()); //check if it is null or not
         Kyc existing = existingOpt.orElse(null);
 
         String pan = request.getPanNumber().trim().toUpperCase();
@@ -51,12 +51,12 @@ public class KycService {
         validatePanOwnership(pan, existing);
         validateAadhaarOwnership(aadhaar, existing);
 
-        LocalDate parsedDob = parseDob(request.getDob());
+        LocalDate parsedDob = parseDob(request.getDob()); //calculate the age
         validateAge(parsedDob);
 
         Kyc saved;
         if (existing == null) {
-            Kyc kyc = Kyc.builder()
+            Kyc kyc = Kyc.builder() //builder->manyentityy
                     .userId(user.getId())
                     .fullName(request.getFullName().trim())
                     .dob(parsedDob)
@@ -68,8 +68,8 @@ public class KycService {
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
-            saved = kycRepository.save(kyc);
-        } else {
+            saved = kycRepository.save(kyc); //null->dirct save -db
+        } else { //count handling...
             int currentCount = existing.getSubmissionCount() == null ? 1 : existing.getSubmissionCount();
             if (currentCount >= 2) {
                 throw new BusinessException(ErrorCode.KYC_ALREADY_SUBMITTED, "KYC can be submitted only 2 times");
@@ -90,7 +90,7 @@ public class KycService {
 
         if (saved.getPanDocumentFileId() != null) {
             try {
-                mediaFileService.deleteFile(saved.getPanDocumentFileId(), user.getId());
+                mediaFileService.deleteFile(saved.getPanDocumentFileId(), user.getId()); //delete exisiting
             } catch (Exception ignored) {
             }
         }
@@ -125,7 +125,7 @@ public class KycService {
     }
 
     public KycResponse getMyKyc() {
-        User user = getCurrentUser();
+        User user = getCurrentUser(); //current user dataa
         Kyc kyc = kycRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "KYC not found"));
         return toResponse(kyc);
@@ -145,7 +145,7 @@ public class KycService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Status must be APPROVED or REJECTED");
         }
 
-        User admin = getCurrentUser();
+        User admin = getCurrentUser(); //admin id (verify -loanoffficer)
         kyc.setStatus(request.getStatus());
         kyc.setRemarks(request.getRemarks());
         kyc.setReviewedBy(admin.getId());
@@ -154,6 +154,7 @@ public class KycService {
 
         Kyc saved = kycRepository.save(kyc);
 
+//store the details in userrepo
         User targetUser = userRepository.findById(saved.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         targetUser.setKycStatus(saved.getStatus());
@@ -176,7 +177,7 @@ public class KycService {
         return ApiResponse.success("KYC updated successfully", toResponse(saved));
     }
 
-    private User getCurrentUser() {
+    private User getCurrentUser() { //jwt ->extract to store in secuitycontext
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -198,7 +199,7 @@ public class KycService {
     }
 
     private void validatePanOwnership(String panNumber, Kyc existing) {
-        Optional<Kyc> panOwner = kycRepository.findByPanNumber(panNumber);
+        Optional<Kyc> panOwner = kycRepository.findByPanNumber(panNumber); //check unique..
         if (panOwner.isPresent() && (existing == null || !panOwner.get().getId().equals(existing.getId()))) {
             throw new BusinessException(ErrorCode.INVALID_PAN, "PAN already used");
         }

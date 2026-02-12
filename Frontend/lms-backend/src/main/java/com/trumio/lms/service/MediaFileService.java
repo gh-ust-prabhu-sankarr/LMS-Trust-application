@@ -34,7 +34,7 @@ public class MediaFileService {
     private final MediaFileRepository mediaFileRepository;
     private final AuditService auditService;
 
-    @Value("${app.file.upload-dir:./uploads}") //Reads value from application.yml / application.propertie
+    @Value("${app.file.upload-dir:./uploads}") //Reads value from  / application.propertie ----!= /uploads
     private String uploadDir;
 
     /**
@@ -63,7 +63,7 @@ public class MediaFileService {
             Files.copy(file.getInputStream(), filePath);//saving to upload  Give me a stream of bytes from the uploaded file.
 
             // Save metadata to database
-            MediaFile mediaFile = MediaFile.builder()
+            MediaFile mediaFile = MediaFile.builder() //.builder() is used to create object cleanly.
                     .fileName(filename)
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())

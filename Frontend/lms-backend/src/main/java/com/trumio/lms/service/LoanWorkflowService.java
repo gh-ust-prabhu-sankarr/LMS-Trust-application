@@ -35,6 +35,7 @@ import java.time.LocalDateTime;
 public class LoanWorkflowService {
 
     private static final double INITIAL_OFFICER_WALLET = 100_000_000.0;
+    // Default wallet balance if officer wallet is null
 
     private final LoanApplicationRepository loanApplicationRepository;
     private final CustomerRepository customerRepository;
@@ -42,83 +43,101 @@ public class LoanWorkflowService {
     private final EMIService emiService;
     private final AuditService auditService;
 
+    // Move loan from SUBMITTED → UNDER_REVIEW
     public ApiResponse<LoanApplication> moveToReview(String loanId) {
-        LoanApplication loan = getLoan(loanId);
-        validateTransition(loan.getStatus(), LoanStatus.UNDER_REVIEW);
+        LoanApplication loan = getLoan(loanId); // Fetch loan from DB
+        validateTransition(loan.getStatus(), LoanStatus.UNDER_REVIEW); // Validate state change
 
-        loan.setStatus(LoanStatus.UNDER_REVIEW);
+        loan.setStatus(LoanStatus.UNDER_REVIEW); // Update status
         loan.setUpdatedAt(LocalDateTime.now());
 
-        LoanApplication saved = loanApplicationRepository.save(loan);
+        LoanApplication saved = loanApplicationRepository.save(loan); // Save to DB
+
         auditService.log(getCurrentUserId(), "LOAN_UNDER_REVIEW", "LOAN_APPLICATION",
-                loanId, "Loan moved to review");
+                loanId, "Loan moved to review"); // Store audit log
 
         return ApiResponse.success("Loan moved to review", saved);
     }
 
+    // Approve loan and transfer money
     public ApiResponse<LoanApplication> approveLoan(String loanId, LoanApprovalRequest request) {
-        LoanApplication loan = getLoan(loanId);
-        validateTransition(loan.getStatus(), LoanStatus.APPROVED);
 
-        String officerId = getCurrentUserId();
+        LoanApplication loan = getLoan(loanId); // Fetch loan
+        validateTransition(loan.getStatus(), LoanStatus.APPROVED); // Ensure valid transition
+
+        String officerId = getCurrentUserId(); // Get logged-in officer
         User officer = userRepository.findById(officerId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
         Customer customer = customerRepository.findById(loan.getCustomerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
 
         double amount = request.getApprovedAmount() == null ? 0.0 : request.getApprovedAmount();
-        // Get officer's current wallet balance
-        double officerBalance = officer.getWalletBalance() == null ? INITIAL_OFFICER_WALLET : officer.getWalletBalance();
-        double customerBalance = customer.getWalletBalance() == null ? 0.0 : customer.getWalletBalance();
-// Check if officer has enough money to approve loan
-        if (officerBalance < amount) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Officer wallet balance is insufficient");
-        }
-//off -> user
-        officer.setWalletBalance(officerBalance - amount);
-        //user ->off repaymentt
-        customer.setWalletBalance(customerBalance + amount);
-        //saveinggg to db
-        userRepository.save(officer);
-        customerRepository.save(customer);
 
+        // Get balances (set default if null)
+        double officerBalance = officer.getWalletBalance() == null ?
+                INITIAL_OFFICER_WALLET : officer.getWalletBalance();
+
+        double customerBalance = customer.getWalletBalance() == null ?
+                0.0 : customer.getWalletBalance();
+
+        // Prevent approving if officer has insufficient funds
+        if (officerBalance < amount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE,
+                    "Officer wallet balance is insufficient");
+        }
+
+        // Transfer money: Officer → Customer
+        officer.setWalletBalance(officerBalance - amount);
+        customer.setWalletBalance(customerBalance + amount);
+
+        userRepository.save(officer);      // Save updated officer wallet
+        customerRepository.save(customer); // Save updated customer wallet
+
+        // Update loan details
         loan.setStatus(LoanStatus.APPROVED);
         loan.setApprovedAmount(request.getApprovedAmount());
         loan.setApprovedAt(LocalDateTime.now());
         loan.setReviewedBy(officerId);
         loan.setUpdatedAt(LocalDateTime.now());
 
-        LoanApplication saved = loanApplicationRepository.save(loan);
+        LoanApplication saved = loanApplicationRepository.save(loan); // Save loan
 
+        // Generate EMI schedule if not already created
         if (emiService.getScheduleByLoanId(saved.getId()).isEmpty()) {
             emiService.generateSchedule(saved);
         }
+
         auditService.log(getCurrentUserId(), "LOAN_APPROVED", "LOAN_APPLICATION",
                 loanId, "Loan approved: " + request.getComments());
 
         return ApiResponse.success("Loan approved successfully", saved);
     }
 
+    // Reject loan
     public ApiResponse<LoanApplication> rejectLoan(String loanId, String reason) {
-        LoanApplication loan = getLoan(loanId);
-        validateTransition(loan.getStatus(), LoanStatus.REJECTED);
+
+        LoanApplication loan = getLoan(loanId); // Fetch loan
+        validateTransition(loan.getStatus(), LoanStatus.REJECTED); // Validate transition
 
         loan.setStatus(LoanStatus.REJECTED);
         loan.setRejectionReason(reason);
         loan.setReviewedBy(getCurrentUserId());
         loan.setUpdatedAt(LocalDateTime.now());
 
-        LoanApplication saved = loanApplicationRepository.save(loan);
+        LoanApplication saved = loanApplicationRepository.save(loan); // Save
+
         auditService.log(getCurrentUserId(), "LOAN_REJECTED", "LOAN_APPLICATION",
                 loanId, "Loan rejected: " + reason);
 
         return ApiResponse.success("Loan rejected", saved);
     }
 
+    // Disburse loan (final stage before ACTIVE)
     public ApiResponse<LoanApplication> disburseLoan(String loanId) {
-        // Fetch loan from database
-        LoanApplication loan = getLoan(loanId);
-        validateTransition(loan.getStatus(), LoanStatus.DISBURSED);
+
+        LoanApplication loan = getLoan(loanId); // Fetch loan
+        validateTransition(loan.getStatus(), LoanStatus.DISBURSED); // Validate transition
 
         loan.setStatus(LoanStatus.DISBURSED);
         loan.setDisbursedAt(LocalDateTime.now());
@@ -126,10 +145,9 @@ public class LoanWorkflowService {
 
         LoanApplication saved = loanApplicationRepository.save(loan);
 
-        // Generate EMI schedule
-        emiService.generateSchedule(saved);
+        emiService.generateSchedule(saved); // Generate EMI schedule
 
-        // Move to ACTIVE
+        // Move loan to ACTIVE state
         saved.setStatus(LoanStatus.ACTIVE);
         saved = loanApplicationRepository.save(saved);
 
@@ -139,7 +157,9 @@ public class LoanWorkflowService {
         return ApiResponse.success("Loan disbursed successfully", saved);
     }
 
+    // Validates allowed state transitions (Loan State Machine)
     private void validateTransition(LoanStatus from, LoanStatus to) {
+
         boolean valid = switch (from) {
             case DRAFT -> to == LoanStatus.SUBMITTED;
             case SUBMITTED -> to == LoanStatus.UNDER_REVIEW;
@@ -151,19 +171,26 @@ public class LoanWorkflowService {
         };
 
         if (!valid) {
-            throw new InvalidStateTransitionException(from, to);
+            throw new InvalidStateTransitionException(from, to); // Prevent illegal status change
         }
     }
 
+    // Fetch loan safely
     private LoanApplication getLoan(String loanId) {
         return loanApplicationRepository.findById(loanId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
     }
 
+    // Get currently logged-in user ID using SecurityContext
     private String getCurrentUserId() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        String username = SecurityContextHolder
+                .getContext()
+                .getAuthentication()
+                .getName();
+
         return userRepository.findByUsername(username)
                 .map(User::getId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 }
+

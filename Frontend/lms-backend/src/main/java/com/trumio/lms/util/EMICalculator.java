@@ -16,12 +16,12 @@ public class EMICalculator {
      */
     public static double calculateEMI(double principal, double annualRate, int tenureMonths) {
         // Convert annual interest rate to monthly decimal rate
-        double monthlyRate = annualRate / (12 * 100);
+        double monthlyRate = annualRate / (12 * 100); //per month --->/12
         // basic emi formulaaa
 
         double emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths)) /
                 (Math.pow(1 + monthlyRate, tenureMonths) - 1);
-        return Math.round(emi * 100.0) / 100.0;
+        return Math.round(emi * 100.0) / 100.0; //round to 2 dec
     }
 
     /**
@@ -29,6 +29,7 @@ public class EMICalculator {
      */
     public static List<EMIInstallment> generateSchedule(double principal, double annualRate,
                                                         int tenureMonths, LocalDate startDate) {
+        //list for monthly
         List<EMIInstallment> installments = new ArrayList<>();
         double monthlyRate = annualRate / (12 * 100);
         double emi = calculateEMI(principal, annualRate, tenureMonths);
