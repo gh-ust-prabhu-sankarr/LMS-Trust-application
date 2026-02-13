@@ -3,6 +3,7 @@ package com.trumio.lms.controller;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.KycRequest;
 import com.trumio.lms.dto.KycResponse;
+import com.trumio.lms.idempotency.Idempotent;
 import com.trumio.lms.service.KycService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class KycController {
      */
     @PostMapping(value = "/submit", consumes = {"multipart/form-data"})
     @PreAuthorize("hasRole('CUSTOMER')")
+    @Idempotent(entityType = "KYC")
     public ResponseEntity<ApiResponse<KycResponse>> submitKyc(
             @Valid @ModelAttribute KycRequest request, //read tetxt filed...name...  Read text fields from multipart request
             @RequestParam("panDocument") MultipartFile panDocument, //extract and  file size and file type conetnt

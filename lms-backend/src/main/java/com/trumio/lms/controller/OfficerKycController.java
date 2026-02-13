@@ -4,6 +4,7 @@ import com.trumio.lms.dto.AdminKycRequest;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.KycResponse;
 import com.trumio.lms.entity.enums.KYCStatus;
+import com.trumio.lms.idempotency.Idempotent;
 import com.trumio.lms.service.KycService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +33,7 @@ public class OfficerKycController {
     }
 
     @PostMapping("/{kycId}/approve")
+    @Idempotent(entityType = "KYC")
     public ResponseEntity<ApiResponse<KycResponse>> approve(
             @PathVariable String kycId,
             @RequestBody(required = false) AdminKycRequest request) {
@@ -43,6 +45,7 @@ public class OfficerKycController {
     }
 
     @PostMapping("/{kycId}/reject")
+    @Idempotent(entityType = "KYC")
     public ResponseEntity<ApiResponse<KycResponse>> reject(
             @PathVariable String kycId,
             @RequestBody(required = false) AdminKycRequest request) {

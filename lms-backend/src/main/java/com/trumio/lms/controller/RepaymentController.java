@@ -9,6 +9,7 @@ import com.trumio.lms.entity.Repayment;
 import com.trumio.lms.entity.User;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
+import com.trumio.lms.idempotency.Idempotent;
 import com.trumio.lms.repository.UserRepository;
 import com.trumio.lms.service.EMIService;
 import com.trumio.lms.service.RepaymentService;
@@ -32,6 +33,7 @@ public class RepaymentController {
 
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
+    @Idempotent(entityType = "Repayment")
     public ResponseEntity<ApiResponse<Repayment>> makeRepayment(@Valid @RequestBody RepaymentRequest request) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByUsername(username)
@@ -42,6 +44,7 @@ public class RepaymentController {
 
     @PostMapping("/miss/{loanId}")
     @PreAuthorize("hasRole('CUSTOMER')")
+    @Idempotent(entityType = "Repayment")
     public ResponseEntity<ApiResponse<EMISchedule>> markMissed(@PathVariable String loanId) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByUsername(username)
