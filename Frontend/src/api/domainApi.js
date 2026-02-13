@@ -1,5 +1,5 @@
 import { api } from "./axios.js";
-import { idempotentPost } from "./idempotentApi.js";
+import { idempotentPost, idempotentPut } from "./idempotentApi.js";
 
 export const unwrap = (res) => res?.data?.data ?? res?.data;
 
@@ -43,8 +43,11 @@ export const kycApi = {
     formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
     formData.append("panDocument", panDocument);
     formData.append("aadhaarDocument", aadhaarDocument);
-    return api.post("/kyc/submit", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
+    return idempotentPost("/kyc/submit", formData, {
+      operationId: "kycSubmit",
+      config: {
+        headers: { "Content-Type": "multipart/form-data" },
+      },
     });
   },
   getMyKyc: () => api.get("/kyc/me"),
@@ -61,24 +64,40 @@ export const kycApi = {
   },
   approve: async (kycId, remarks) => {
     try {
-      return await api.post(`/officer/kyc/${kycId}/approve`, { remarks });
+      return await idempotentPost(`/officer/kyc/${kycId}/approve`, { remarks }, {
+        operationId: `kycApprove:${kycId}`,
+      });
     } catch (err) {
       if (!shouldFallbackEndpoint(err)) throw err;
-      return api.post(`/admin/kyc/${kycId}/verify`, {
-        status: "APPROVED",
-        remarks,
-      });
+      return idempotentPost(
+        `/admin/kyc/${kycId}/verify`,
+        {
+          status: "APPROVED",
+          remarks,
+        },
+        {
+          operationId: `kycVerifyApproved:${kycId}`,
+        },
+      );
     }
   },
   reject: async (kycId, remarks) => {
     try {
-      return await api.post(`/officer/kyc/${kycId}/reject`, { remarks });
+      return await idempotentPost(`/officer/kyc/${kycId}/reject`, { remarks }, {
+        operationId: `kycReject:${kycId}`,
+      });
     } catch (err) {
       if (!shouldFallbackEndpoint(err)) throw err;
-      return api.post(`/admin/kyc/${kycId}/verify`, {
-        status: "REJECTED",
-        remarks,
-      });
+      return idempotentPost(
+        `/admin/kyc/${kycId}/verify`,
+        {
+          status: "REJECTED",
+          remarks,
+        },
+        {
+          operationId: `kycVerifyRejected:${kycId}`,
+        },
+      );
     }
   },
 };
@@ -87,29 +106,56 @@ export const kycApi = {
 export const productApi = {
   getAll: () => api.get("/products"),
   getById: (productId) => api.get(`/products/${productId}`),
-  create: (payload) => api.post("/products", payload),
+  create: (payload) =>
+    idempotentPost("/products", payload, {
+      operationId: "productCreate",
+    }),
 };
 
 // ---------------- LOAN API ----------------
 export const loanApi = {
-  create: (payload) => api.post("/loans", payload),
-  submit: (loanId) => api.post(`/loans/${loanId}/submit`),
+  create: (payload) =>
+    idempotentPost("/loans", payload, {
+      operationId: "loanCreate",
+    }),
+  submit: (loanId) =>
+    idempotentPost(`/loans/${loanId}/submit`, null, {
+      operationId: `loanSubmit:${loanId}`,
+    }),
   getMyLoans: () => api.get("/loans/my-loans"),
   getById: (loanId) => api.get(`/loans/${loanId}`),
   getByStatus: (status) => api.get(`/loans/status/${status}`),
-  moveToReview: (loanId) => api.post(`/loans/${loanId}/review`),
-  approve: (loanId, payload) => api.post(`/loans/${loanId}/approve`, payload),
+  moveToReview: (loanId) =>
+    idempotentPost(`/loans/${loanId}/review`, null, {
+      operationId: `loanReview:${loanId}`,
+    }),
+  approve: (loanId, payload) =>
+    idempotentPost(`/loans/${loanId}/approve`, payload, {
+      operationId: `loanApprove:${loanId}`,
+    }),
   reject: (loanId, reason) =>
-    api.post(`/loans/${loanId}/reject`, null, { params: { reason } }),
-  disburse: (loanId) => api.post(`/loans/${loanId}/disburse`),
+    idempotentPost(`/loans/${loanId}/reject`, null, {
+      operationId: `loanReject:${loanId}`,
+      config: { params: { reason } },
+    }),
+  disburse: (loanId) =>
+    idempotentPost(`/loans/${loanId}/disburse`, null, {
+      operationId: `loanDisburse:${loanId}`,
+    }),
 };
 
 // ---------------- REPAYMENT API ----------------
 export const repaymentApi = {
-  makePayment: (payload) => api.post("/repayments", payload),
+  makePayment: (payload) =>
+    idempotentPost("/repayments", payload, {
+      operationId: "repaymentMakePayment",
+    }),
   getByLoan: (loanId) => api.get(`/repayments/loan/${loanId}`),
   getSchedule: (loanId) => api.get(`/repayments/schedule/${loanId}`),
-  markMissed: (loanId) => api.post(`/repayments/miss/${loanId}`),
+  markMissed: (loanId) =>
+    idempotentPost(`/repayments/miss/${loanId}`, null, {
+      operationId: `repaymentMarkMissed:${loanId}`,
+    }),
 };
 
 // ---------------- FILE API ----------------
@@ -150,8 +196,14 @@ export const fileApi = {
 export const adminApi = {
   getUsers: () => api.get("/admin/users"),
   toggleUserStatus: (userId, active) =>
-    api.put(`/admin/users/${userId}/status`, null, { params: { active } }),
-  createOfficer: (payload) => api.post("/admin/users/officer", payload),
+    idempotentPut(`/admin/users/${userId}/status`, null, {
+      operationId: `adminToggleUserStatus:${userId}:${active}`,
+      config: { params: { active } },
+    }),
+  createOfficer: (payload) =>
+    idempotentPost("/admin/users/officer", payload, {
+      operationId: "adminCreateOfficer",
+    }),
   getAuditByUser: (userId) => api.get(`/admin/audit/user/${userId}`),
   getAuditByEntity: (entityType, entityId) =>
     api.get(`/admin/audit/entity/${entityType}/${entityId}`),
