@@ -136,14 +136,7 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
               ) : null}
             </div>
 
-            <button
-              onClick={loadProducts}
-              className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-900 hover:text-white transition-all flex items-center gap-2 justify-center"
-              type="button"
-            >
-              <RefreshCw size={12} />
-              Refresh Products
-            </button>
+           
           </div>
         </motion.div>
 

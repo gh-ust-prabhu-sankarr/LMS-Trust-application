@@ -97,6 +97,7 @@ export default function LoanDetailsEMI() {
   const [rate, setRate] = useState(0);
   const [tenureYears, setTenureYears] = useState(1);
   const [myLoans, setMyLoans] = useState([]);
+  const [modal, setModal] = useState({ open: false, title: "Notice", message: "", onClose: null });
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -156,6 +157,16 @@ export default function LoanDetailsEMI() {
     calcRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const showModal = (message, title = "Notice", onClose = null) => {
+    setModal({ open: true, title, message, onClose });
+  };
+
+  const closeModal = () => {
+    const callback = modal.onClose;
+    setModal({ open: false, title: "Notice", message: "", onClose: null });
+    if (typeof callback === "function") callback();
+  };
+
   // Check if user has already applied for this loan type
   const hasAlreadyApplied = useMemo(() => {
     return myLoans.some(loan => loan.loanProductId === activeLoan?.id);
@@ -168,7 +179,7 @@ export default function LoanDetailsEMI() {
     }
 
     if (hasAlreadyApplied) {
-      alert("You have already applied for this loan type. Only one application per loan type is allowed.");
+      showModal("You have already applied for this loan type. Only one application per loan type is allowed.");
       return;
     }
 
@@ -177,13 +188,15 @@ export default function LoanDetailsEMI() {
       const profile = unwrap(profileRes) || profileRes?.data;
       const kycStatus = String(profile?.kycStatus || "").toUpperCase();
       if (kycStatus !== "APPROVED" && kycStatus !== "VERIFIED") {
-        alert("KYC verification is required before loan application.");
-        navigate("/app");
+        showModal("KYC verification is required before loan application.", "KYC Required", () => navigate("/app"));
         return;
       }
     } catch {
-      alert("Please complete profile and KYC verification before loan application.");
-      navigate("/app");
+      showModal(
+        "Please complete profile and KYC verification before loan application.",
+        "KYC Required",
+        () => navigate("/app")
+      );
       return;
     }
 
@@ -421,6 +434,24 @@ export default function LoanDetailsEMI() {
           </div>
         </section>
       </div>
+
+      {modal.open ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">{modal.title}</h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">{modal.message}</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

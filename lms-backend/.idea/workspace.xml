@@ -5,13 +5,22 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="9d6bf706-4498-4402-a727-c352f74d4e27" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/components/auth/AuthShell.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/components/auth/AuthShell.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/components/hero/Hero.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/components/hero/Hero.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/components/loans/LoansSection.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/components/loans/LoansSection.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/context/AuthContext.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/context/AuthContext.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/auth/AdminLogin.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/auth/AdminLogin.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/auth/LoanOfficerLogin.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/auth/LoanOfficerLogin.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/auth/Login.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/auth/Login.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/loans/LoanDetailsEMI.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/loans/LoanDetailsEMI.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/loans/applications/LoanApplication.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/loans/applications/LoanApplication.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/LoanApplicationRequest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/LoanApplicationRequest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/LoginRequest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/LoginRequest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/exception/ErrorCode.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/exception/ErrorCode.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/security/UserDetailsServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/security/UserDetailsServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuthService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuthService.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanApplicationService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanApplicationService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/trumio/lms/service/AuthServiceTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/com/trumio/lms/service/RepaymentServiceTest.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/util/ValidationUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/util/ValidationUtil.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

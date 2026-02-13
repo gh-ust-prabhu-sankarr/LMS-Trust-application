@@ -2,14 +2,14 @@ import React from 'react';
 import { motion } from "framer-motion";
 import { 
   ArrowRight, 
-  TrendingUp, 
-  Landmark, 
-  ShieldCheck, 
-  PieChart, 
-  User, 
-  GraduationCap, 
-  Car, 
-  Briefcase 
+  TrendingUp,
+  Landmark,
+  ShieldCheck,
+  PieChart,
+  User,
+  GraduationCap,
+  Car,
+  Briefcase
 } from "lucide-react";
 
 const Hero = ({ onProtectedAction }) => {
@@ -37,21 +37,21 @@ const Hero = ({ onProtectedAction }) => {
           backgroundSize: '40px 40px'
         }}
       />
-      
+
       {/* Decorative Ambient Glows */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none translate-x-1/4 -translate-y-1/4" />
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-500/5 rounded-full blur-[100px] pointer-events-none -translate-x-1/4 translate-y-1/4" />
 
       <div className="relative z-10 w-full max-w-7xl mx-auto px-6 lg:px-20 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-        
+
         {/* LEFT SIDE: Content (Unchanged Typography) */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8 }}
           className="flex flex-col items-start text-left"
         >
-         
+
           <h1 className="text-5xl lg:text-7xl font-serif font-medium tracking-tight text-[#0F172A] leading-[1.1] mb-8">
             Your Finance. <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500 font-semibold">
@@ -73,12 +73,12 @@ const Hero = ({ onProtectedAction }) => {
 
         {/* RIGHT SIDE: The High-Highlight Hub */}
         <div className="relative flex items-center justify-center w-full h-[550px] lg:h-[650px]">
-          
+
           {/* Intense Glow Layer to Highlight the Hub */}
           <div className="absolute w-[420px] h-[420px] bg-emerald-400/20 rounded-full blur-[90px] animate-pulse" />
 
           {/* 1. Center Hub Node (Highlighted & Non-White) */}
-          <motion.div 
+          <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 1 }}
@@ -87,7 +87,7 @@ const Hero = ({ onProtectedAction }) => {
             {/* Rapid Pulse Ring */}
             <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20 animate-ping" />
             <div className="absolute inset-3 rounded-full border border-dashed border-emerald-400/40 animate-[spin_20s_linear_infinite]" />
-            
+
             <div className="p-4 bg-white rounded-2xl mb-2 text-emerald-700 shadow-[0_8px_16px_rgba(0,0,0,0.05)] border border-emerald-100/50">
               <Landmark size={36} />
             </div>
@@ -95,34 +95,34 @@ const Hero = ({ onProtectedAction }) => {
           </motion.div>
 
           {/* 2. Rotating Orbit Layer */}
-          <motion.div 
-            animate={{ rotate: 360 }} 
-            transition={{ duration: 50, repeat: Infinity, ease: "linear" }} 
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 50, repeat: Infinity, ease: "linear" }}
             className="absolute w-full h-full flex items-center justify-center z-20"
           >
             {loans.map((loan, index) => {
                 const angle = (index * 360) / loans.length;
                 return (
-                  <div 
-                    key={index} 
-                    className="absolute flex items-center justify-center" 
+                  <div
+                    key={index}
+                    className="absolute flex items-center justify-center"
                     style={{ transform: `rotate(${angle}deg) translateY(-220px)` }}
                   >
                     {/* The double counter-rotation ensures icon AND text stay perfectly straight */}
-                    <motion.div 
-                      animate={{ rotate: -360 }} 
-                      transition={{ duration: 50, repeat: Infinity, ease: "linear" }} 
+                    <motion.div
+                      animate={{ rotate: -360 }}
+                      transition={{ duration: 50, repeat: Infinity, ease: "linear" }}
                       className="flex flex-col items-center"
                     >
                         <div style={{ transform: `rotate(${-angle}deg)` }} className="group flex flex-col items-center">
                             {/* Orbit Box (Slate tint glass) */}
-                            <motion.div 
+                            <motion.div
                                 whileHover={{ scale: 1.15, y: -8 }}
                                 className={`w-18 h-18 bg-slate-100/90 backdrop-blur-xl border border-white/80 flex items-center justify-center rounded-3xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.15)] group-hover:bg-gradient-to-br ${loan.gradient} group-hover:text-white group-hover:border-transparent group-hover:shadow-2xl group-hover:shadow-emerald-500/30 transition-all duration-500 text-slate-600 cursor-pointer p-5`}
                             >
                                 {loan.icon}
                             </motion.div>
-                            
+
                             {/* Straight Text Label */}
                             <div className="mt-4 px-4 py-1.5 bg-[#0F172A] rounded-xl opacity-0 group-hover:opacity-100 transition-all shadow-2xl transform translate-y-2 group-hover:translate-y-0">
                                 <span className="text-[10px] font-bold text-white uppercase tracking-[0.2em] whitespace-nowrap">{loan.label}</span>

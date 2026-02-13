@@ -89,6 +89,22 @@ public class LoanApplicationService {
                 request.getTenure()
         );
 
+        if (customer.getMonthlyIncome() == null || customer.getMonthlyIncome() <= 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Monthly income must be available to apply for loan");
+        }
+
+        double maxAllowedEmi = customer.getMonthlyIncome() * 0.4;
+        if (emi > maxAllowedEmi) {
+            throw new BusinessException(
+                    ErrorCode.EMI_EXCEEDS_INCOME_LIMIT,
+                    String.format(
+                            "Application rejected: EMI %.2f exceeds 40%% of monthly income %.2f",
+                            emi,
+                            customer.getMonthlyIncome()
+                    )
+            );
+        }
+
         LoanApplication application = LoanApplication.builder()
                 .customerId(customer.getId())
                 .loanProductId(product.getId())

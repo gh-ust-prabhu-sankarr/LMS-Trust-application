@@ -30,6 +30,7 @@ export default function LoanApplication() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({});
   const [documents, setDocuments] = useState({});
+  const [modal, setModal] = useState({ open: false, title: "Notice", message: "", onClose: null });
 
   useEffect(() => {
     const load = async () => {
@@ -80,15 +81,25 @@ export default function LoanApplication() {
     return true;
   };
 
+  const showModal = (message, title = "Notice", onClose = null) => {
+    setModal({ open: true, title, message, onClose });
+  };
+
+  const closeModal = () => {
+    const callback = modal.onClose;
+    setModal({ open: false, title: "Notice", message: "", onClose: null });
+    if (typeof callback === "function") callback();
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
 
     if (!validateDocuments()) {
-      alert("Please upload all required documents.");
+      showModal("Please upload all required documents.");
       return;
     }
     if (!activeLoan?.id || String(activeLoan.id).startsWith("default-")) {
-      alert("Loan product is not configured in backend yet. Ask admin to create this product first.");
+      showModal("Loan product is not configured in backend yet. Ask admin to create this product first.");
       return;
     }
 
@@ -98,8 +109,7 @@ export default function LoanApplication() {
       const profile = unwrap(profileRes) || profileRes?.data;
       const kycStatus = String(profile?.kycStatus || "").toUpperCase();
       if (kycStatus !== "APPROVED" && kycStatus !== "VERIFIED") {
-        alert("Please verify KYC before applying for a loan.");
-        navigate("/app");
+        showModal("Please verify KYC before applying for a loan.", "KYC Required", () => navigate("/app"));
         return;
       }
 
@@ -121,10 +131,13 @@ export default function LoanApplication() {
       );
 
       await loanApi.submit(loanId);
-      alert(`${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`);
-      navigate("/app");
+      showModal(
+        `${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`,
+        "Success",
+        () => navigate("/app")
+      );
     } catch (err) {
-      alert(err?.response?.data?.message || err?.message || "Loan application failed.");
+      showModal(err?.response?.data?.message || err?.message || "Loan application failed.", "Application Failed");
     } finally {
       setSubmitting(false);
     }
@@ -234,6 +247,24 @@ export default function LoanApplication() {
           </div>
         </div>
       </div>
+
+      {modal.open ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">{modal.title}</h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">{modal.message}</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
