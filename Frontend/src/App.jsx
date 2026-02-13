@@ -17,59 +17,72 @@ import LoanApplication from "./pages/loans/applications/LoanApplication.jsx";
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
+    <div className="relative min-h-screen overflow-x-hidden bg-[var(--fs-bg)]">
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-[var(--fs-bg)]" />
+        <div className="absolute top-[-12%] left-[12%] h-[45vh] w-[38vw] rounded-full blur-[130px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-emerald) 24%, transparent)" }} />
+        <div className="absolute top-[8%] right-[10%] h-[38vh] w-[34vw] rounded-full blur-[130px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-blue) 18%, transparent)" }} />
+        <div className="absolute bottom-[-14%] left-[20%] h-[44vh] w-[34vw] rounded-full blur-[140px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-purple) 16%, transparent)" }} />
+        <div className="absolute bottom-[-18%] right-[8%] h-[48vh] w-[38vw] rounded-full blur-[150px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-orange) 14%, transparent)" }} />
+        <div className="absolute top-[38%] left-[42%] h-[34vh] w-[26vw] rounded-full blur-[120px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-pink) 10%, transparent)" }} />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[color-mix(in_srgb,var(--fs-slate)_4%,transparent)] to-transparent" />
+      </div>
 
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/login/admin" element={<AdminLogin />} />
-      <Route path="/login/loan-officer" element={<LoanOfficerLogin />} />
+      <div className="relative z-10">
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
 
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/verify-otp" element={<VerifyOtp />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/login/admin" element={<AdminLogin />} />
+          <Route path="/login/loan-officer" element={<LoanOfficerLogin />} />
 
-      <Route path="/loan/:slug" element={<LoanDetailsEMI />} />
-      <Route path="/loan/:slug/apply" element={<LoanApplication />} />
-      <Route path="/education-loan/apply" element={<Navigate to="/loan/education/apply" replace />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/verify-otp" element={<VerifyOtp />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-      <Route path="/gate" element={<AuthGate />} />
+          <Route path="/loan/:slug" element={<LoanDetailsEMI />} />
+          <Route path="/loan/:slug/apply" element={<LoanApplication />} />
+          <Route path="/education-loan/apply" element={<Navigate to="/loan/education/apply" replace />} />
 
-      <Route
-        path="/app"
-        element={
-          <ProtectedRoute allow={["CUSTOMER"]}>
-            <UserDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute allow={["CUSTOMER"]}>
-            <UserDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute allow={["ADMIN"]}>
-            <AdminDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/officer"
-        element={
-          <ProtectedRoute allow={["CREDIT_OFFICER"]}>
-            <OfficerDashboard />
-          </ProtectedRoute>
-        }
-      />
+          <Route path="/gate" element={<AuthGate />} />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          <Route
+            path="/app"
+            element={
+              <ProtectedRoute allow={["CUSTOMER"]}>
+                <UserDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute allow={["CUSTOMER"]}>
+                <UserDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute allow={["ADMIN"]}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/officer"
+            element={
+              <ProtectedRoute allow={["CREDIT_OFFICER"]}>
+                <OfficerDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </div>
   );
 }
-
