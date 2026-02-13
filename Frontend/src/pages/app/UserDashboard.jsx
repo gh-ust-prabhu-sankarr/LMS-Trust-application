@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
+import { customerApi, fileApi, kycApi, loanApi, productApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { useEmiSchedule } from "../../hooks/useEmiSchedule.js";
+import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
+import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 
 const money = (n) => {
   const value = Number(n);
@@ -42,6 +43,7 @@ export default function UserDashboard() {
   const [activeLoanId, setActiveLoanId] = useState("");
   const { repayments, schedule, docs, actionBusy, actionError, payInstallment, missInstallment } = useEmiSchedule(activeLoanId);
   const [myKyc, setMyKyc] = useState(null);
+  const [productById, setProductById] = useState({});
 
   // --- Form States ---
   const [editing, setEditing] = useState(false);
@@ -148,7 +150,11 @@ export default function UserDashboard() {
     setError("");
     try {
       let profileData = null;
-      const [profileRes, loansRes] = await Promise.allSettled([customerApi.getMyProfile(), loanApi.getMyLoans()]);
+      const [profileRes, loansRes, productsRes] = await Promise.allSettled([
+        customerApi.getMyProfile(),
+        loanApi.getMyLoans(),
+        productApi.getAll(),
+      ]);
       
       if (profileRes.status === "fulfilled") {
         const p = profileRes.value.data;
@@ -370,7 +376,8 @@ export default function UserDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Info label="Full Name" value={profile?.fullName} />
                 <Info label="Phone" value={profile?.phone} />
-                <Info label="PAN" value={profile?.panNumber} />
+                <Info label="PAN" value={maskPanNumber(profile?.panNumber)} />
+                <Info label="Bank Balance" value={money(profile?.bankBalance)} />
                 <Info label="Income" value={money(profile?.monthlyIncome)} />
                 <Info label="Employment" value={profile?.employmentType} />
                 <Info label="Credit Score" value={profile?.creditScore} />
@@ -409,6 +416,7 @@ export default function UserDashboard() {
             )}
           </div>
           <div className="space-y-4">
+             <StatCard label="Bank Balance" value={money(profile?.bankBalance)} />
              <StatCard label="KYC Status" value={kycStatusMeta.label} valueClassName="text-xl" />
              <StatCard label="Credit Score" value={profile?.creditScore ?? "-"} />
           </div>
@@ -427,7 +435,8 @@ export default function UserDashboard() {
           {myKyc && !kycEditing ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Info label="KYC Holder" value={myKyc.fullName} />
-              <Info label="PAN" value={myKyc.panNumber} />
+              <Info label="PAN" value={maskPanNumber(myKyc.panNumber)} />
+              <Info label="Aadhaar" value={maskAadhaarNumber(myKyc.aadhaarNumber)} />
               <Info label="Submission Attempts" value={`${kycSubmissionCount}/2`} />
               <div className="md:col-span-2 p-4 bg-slate-50 rounded-xl flex gap-4">
                 {myKyc.panDocumentFileId && <button onClick={() => handleFileDownload(myKyc.panDocumentFileId, "PAN.pdf")} className="text-xs font-bold text-emerald-700 underline">View PAN PDF</button>}
