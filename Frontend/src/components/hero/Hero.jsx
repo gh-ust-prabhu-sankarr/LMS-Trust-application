@@ -1,18 +1,16 @@
-import React from 'react';
-import { motion } from "framer-motion";
+import { color, motion } from "framer-motion";
 import { 
   ArrowRight, 
-  TrendingUp, 
   Landmark, 
-  ShieldCheck, 
-  PieChart, 
   User, 
   GraduationCap, 
   Car, 
   Briefcase 
 } from "lucide-react";
 
-const Hero = ({ onProtectedAction }) => {
+const Hero = () => {
+  const MotionDiv = motion.div;
+
   const loans = [
     { icon: <User size={22}/>, label: "Personal", gradient: "from-emerald-400 to-teal-600" },
     { icon: <GraduationCap size={22}/>, label: "Educational", gradient: "from-purple-400 to-indigo-600" },
@@ -34,7 +32,8 @@ const Hero = ({ onProtectedAction }) => {
         className="absolute inset-0 opacity-[0.09] pointer-events-none"
         style={{
           backgroundImage: `linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)`,
-          backgroundSize: '40px 40px'
+          backgroundSize: '40px 40px',
+        
         }}
       />
       
@@ -45,7 +44,7 @@ const Hero = ({ onProtectedAction }) => {
       <div className="relative z-10 w-full max-w-7xl mx-auto px-6 lg:px-20 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
         
         {/* LEFT SIDE: Content (Unchanged Typography) */}
-        <motion.div 
+        <MotionDiv 
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8 }}
@@ -69,7 +68,7 @@ const Hero = ({ onProtectedAction }) => {
           >
             Get Started <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
           </button>
-        </motion.div>
+        </MotionDiv>
 
         {/* RIGHT SIDE: The High-Highlight Hub */}
         <div className="relative flex items-center justify-center w-full h-[550px] lg:h-[650px]">
@@ -78,7 +77,7 @@ const Hero = ({ onProtectedAction }) => {
           <div className="absolute w-[420px] h-[420px] bg-emerald-400/20 rounded-full blur-[90px] animate-pulse" />
 
           {/* 1. Center Hub Node (Highlighted & Non-White) */}
-          <motion.div 
+          <MotionDiv 
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 1 }}
@@ -92,10 +91,10 @@ const Hero = ({ onProtectedAction }) => {
               <Landmark size={36} />
             </div>
             <span className="text-[#0F172A] font-black text-[11px] tracking-[0.4em] uppercase">LMS HUB</span>
-          </motion.div>
+          </MotionDiv>
 
           {/* 2. Rotating Orbit Layer */}
-          <motion.div 
+          <MotionDiv 
             animate={{ rotate: 360 }} 
             transition={{ duration: 50, repeat: Infinity, ease: "linear" }} 
             className="absolute w-full h-full flex items-center justify-center z-20"
@@ -109,30 +108,30 @@ const Hero = ({ onProtectedAction }) => {
                     style={{ transform: `rotate(${angle}deg) translateY(-220px)` }}
                   >
                     {/* The double counter-rotation ensures icon AND text stay perfectly straight */}
-                    <motion.div 
+                    <MotionDiv 
                       animate={{ rotate: -360 }} 
                       transition={{ duration: 50, repeat: Infinity, ease: "linear" }} 
                       className="flex flex-col items-center"
                     >
                         <div style={{ transform: `rotate(${-angle}deg)` }} className="group flex flex-col items-center">
                             {/* Orbit Box (Slate tint glass) */}
-                            <motion.div 
+                            <MotionDiv 
                                 whileHover={{ scale: 1.15, y: -8 }}
                                 className={`w-18 h-18 bg-slate-100/90 backdrop-blur-xl border border-white/80 flex items-center justify-center rounded-3xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.15)] group-hover:bg-gradient-to-br ${loan.gradient} group-hover:text-white group-hover:border-transparent group-hover:shadow-2xl group-hover:shadow-emerald-500/30 transition-all duration-500 text-slate-600 cursor-pointer p-5`}
                             >
                                 {loan.icon}
-                            </motion.div>
+                            </MotionDiv>
                             
                             {/* Straight Text Label */}
                             <div className="mt-4 px-4 py-1.5 bg-[#0F172A] rounded-xl opacity-0 group-hover:opacity-100 transition-all shadow-2xl transform translate-y-2 group-hover:translate-y-0">
                                 <span className="text-[10px] font-bold text-white uppercase tracking-[0.2em] whitespace-nowrap">{loan.label}</span>
                             </div>
                         </div>
-                    </motion.div>
+                    </MotionDiv>
                   </div>
                 );
             })}
-          </motion.div>
+          </MotionDiv>
 
           {/* 3. Decorative Outer Rings */}
           <div className="absolute w-[440px] h-[440px] border border-emerald-500/10 rounded-full" />

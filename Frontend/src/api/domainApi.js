@@ -97,11 +97,14 @@ export const repaymentApi = {
 
 // ---------------- FILE API ----------------
 export const fileApi = {
-  upload: (file, entityType, entityId) => {
+  upload: (file, entityType, entityId, displayName) => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("entityType", entityType);
     formData.append("entityId", entityId);
+    if (displayName) {
+      formData.append("displayName", displayName);
+    }
 
     return api.post("/files/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },

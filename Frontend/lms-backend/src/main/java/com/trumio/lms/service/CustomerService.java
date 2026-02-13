@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class CustomerService {
+    private static final double DEFAULT_CUSTOMER_BANK_BALANCE = 100000.0;
+
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
@@ -49,6 +51,7 @@ public class CustomerService {
         customer.setAddress(request.getAddress());
         customer.setEmploymentType(request.getEmploymentType());
         customer.setMonthlyIncome(request.getMonthlyIncome());
+        if (customer.getBankBalance() == null) customer.setBankBalance(DEFAULT_CUSTOMER_BANK_BALANCE);
         if (customer.getKycStatus() == null) customer.setKycStatus(user.getKycStatus());
         if (customer.getCreatedAt() == null) customer.setCreatedAt(LocalDateTime.now());
         customer.setUpdatedAt(LocalDateTime.now());
@@ -69,8 +72,16 @@ public class CustomerService {
     public Customer getByUserId(String userId) {
         Customer customer = customerRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
+        boolean changed = false;
+        if (customer.getBankBalance() == null) {
+            customer.setBankBalance(DEFAULT_CUSTOMER_BANK_BALANCE);
+            changed = true;
+        }
         if (customer.getKycStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
             customer.setCreditScore(650 + new java.util.Random().nextInt(251));
+            changed = true;
+        }
+        if (changed) {
             customer.setUpdatedAt(LocalDateTime.now());
             customer = customerRepository.save(customer);
         }
@@ -78,8 +89,14 @@ public class CustomerService {
     }
 
     public Customer getById(String customerId) {
-        return customerRepository.findById(customerId)
+        Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
+        if (customer.getBankBalance() == null) {
+            customer.setBankBalance(DEFAULT_CUSTOMER_BANK_BALANCE);
+            customer.setUpdatedAt(LocalDateTime.now());
+            customer = customerRepository.save(customer);
+        }
+        return customer;
     }
 
     public Customer getCurrentCustomer() {

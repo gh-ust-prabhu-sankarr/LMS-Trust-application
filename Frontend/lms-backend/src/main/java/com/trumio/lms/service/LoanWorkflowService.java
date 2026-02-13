@@ -33,13 +33,9 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class LoanWorkflowService {
-<<<<<<< HEAD
+    private static final double DEFAULT_CUSTOMER_BANK_BALANCE = 100000.0;
+    private static final double DEFAULT_OFFICER_BANK_BALANCE = 1_000_000_000.0;
 
-    private static final double INITIAL_OFFICER_WALLET = 100_000_000.0;
-    // Default wallet balance if officer wallet is null
-
-=======
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
     private final LoanApplicationRepository loanApplicationRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
@@ -77,26 +73,23 @@ public class LoanWorkflowService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
 
         double amount = request.getApprovedAmount() == null ? 0.0 : request.getApprovedAmount();
-<<<<<<< HEAD
-
-        // Get balances (set default if null)
-        double officerBalance = officer.getWalletBalance() == null ?
-                INITIAL_OFFICER_WALLET : officer.getWalletBalance();
-
-        double customerBalance = customer.getWalletBalance() == null ?
-                0.0 : customer.getWalletBalance();
-
-        // Prevent approving if officer has insufficient funds
-        if (officerBalance < amount) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE,
-                    "Officer wallet balance is insufficient");
+        if (amount <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_LOAN_AMOUNT, "Approved amount must be greater than 0");
+        }
+        if (officer.getBankBalance() == null) {
+            officer.setBankBalance(DEFAULT_OFFICER_BANK_BALANCE);
+        }
+        if (customer.getBankBalance() == null) {
+            customer.setBankBalance(DEFAULT_CUSTOMER_BANK_BALANCE);
+        }
+        if (officer.getBankBalance() < amount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Officer bank balance is insufficient for disbursement");
         }
 
-        // Transfer money: Officer → Customer
-        officer.setWalletBalance(officerBalance - amount);
-        customer.setWalletBalance(customerBalance + amount);
-=======
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
+        officer.setBankBalance(officer.getBankBalance() - amount);
+        customer.setBankBalance(customer.getBankBalance() + amount);
+        officer.setUpdatedAt(LocalDateTime.now());
+        customer.setUpdatedAt(LocalDateTime.now());
 
         userRepository.save(officer);      // Save updated officer wallet
         customerRepository.save(customer); // Save updated customer wallet

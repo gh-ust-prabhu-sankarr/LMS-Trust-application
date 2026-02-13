@@ -3,12 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, ChevronDown, FileText, ShieldCheck, Target } from "lucide-react";
 import Navbar from "../../components/navbar/Navbar.jsx";
-<<<<<<< HEAD
 import BackgroundCanvas from "../../components/layout/BackgroundCanvas.jsx";
-import { customerApi, productApi, unwrap } from "../../api/domainApi.js";
-=======
 import { customerApi, loanApi, productApi, unwrap } from "../../api/domainApi.js";
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
@@ -91,6 +87,9 @@ const computeEmi = (amount, annualRatePercent, tenureYears) => {
 };
 
 export default function LoanDetailsEMI() {
+  const MotionDiv = motion.div;
+  const MotionCircle = motion.circle;
+
   const { slug = "" } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
@@ -235,7 +234,7 @@ export default function LoanDetailsEMI() {
 
         <section className="pt-16 pb-14 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
-            <motion.div
+            <MotionDiv
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border ${theme.border} shadow-sm`}
@@ -244,7 +243,7 @@ export default function LoanDetailsEMI() {
               <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">
                 {activeLoan.badgeText}
               </span>
-            </motion.div>
+            </MotionDiv>
 
             <h1 className="text-5xl md:text-6xl font-serif font-bold text-slate-900 leading-[1.1] tracking-tight">
               {activeLoan.heroTitle}
@@ -259,12 +258,12 @@ export default function LoanDetailsEMI() {
             </button>
           </div>
 
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative">
+          <MotionDiv initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative">
             <div className="relative z-10 w-full aspect-[4/3] rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white">
               <img src={activeLoan.imageUrl} alt={activeLoan.name} className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900/35 to-transparent" />
             </div>
-          </motion.div>
+          </MotionDiv>
         </section>
 
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-16">
@@ -362,7 +361,7 @@ export default function LoanDetailsEMI() {
                 <div className="relative w-32 h-32 mb-6">
                   <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                     <circle cx="50" cy="50" r="35" stroke="#F1F5F9" strokeWidth="10" fill="transparent" />
-                    <motion.circle
+                    <MotionCircle
                       cx="50"
                       cy="50"
                       r="35"

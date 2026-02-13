@@ -123,7 +123,9 @@ export default function LoanApplication() {
       }
 
       await Promise.all(
-        requiredDocuments.map((docName) => fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId))
+        requiredDocuments.map((docName) =>
+          fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId, docName)
+        )
       );
 
       await loanApi.submit(loanId);

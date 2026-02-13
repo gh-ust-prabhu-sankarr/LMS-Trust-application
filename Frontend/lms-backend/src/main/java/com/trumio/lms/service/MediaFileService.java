@@ -43,7 +43,7 @@ public class MediaFileService {
     /**
      * Upload file
      */
-    public MediaFile uploadFile(MultipartFile file, String entityType, String entityId, String userId) {
+    public MediaFile uploadFile(MultipartFile file, String entityType, String entityId, String userId, String displayName) {
         // Validate file
         ValidationUtil.validateFileType(file.getContentType());
         ValidationUtil.validateFileSize(file.getSize());
@@ -53,6 +53,10 @@ public class MediaFileService {
         String extension = originalFilename != null ?
                 originalFilename.substring(originalFilename.lastIndexOf(".")) : "";
         String filename = UUID.randomUUID().toString() + extension;
+
+        String resolvedDisplayName = (displayName != null && !displayName.isBlank())
+                ? displayName.trim()
+                : (originalFilename != null ? originalFilename : filename);
 
         // Create upload directory if not exists
         Path uploadPath = Paths.get(uploadDir);
@@ -68,7 +72,7 @@ public class MediaFileService {
             // Save metadata to database
             MediaFile mediaFile = MediaFile.builder()
                     .fileName(originalFilename != null ? originalFilename : filename)
-                    .displayName(originalFilename != null ? originalFilename : filename)
+                    .displayName(resolvedDisplayName)
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
                     .storagePath(filePath.toString())
@@ -97,7 +101,7 @@ public class MediaFileService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "KYC document is required");
         }
         ValidationUtil.validateKycPdf(file.getSize(), file.getContentType());
-        return uploadFile(file, Constants.ENTITY_KYC_DOCUMENT, kycId, userId);
+        return uploadFile(file, Constants.ENTITY_KYC_DOCUMENT, kycId, userId, null);
     }
 
     /**
@@ -127,6 +131,10 @@ public class MediaFileService {
      * Generate display name based on file position and type
      */
     private String generateDisplayName(MediaFile file, String entityType, String entityId, int index) {
+        if (file.getDisplayName() != null && !file.getDisplayName().isBlank()) {
+            return file.getDisplayName();
+        }
+
         if ("LOAN_APPLICATION".equals(entityType)) {
             List<String> labels = loanApplicationRepository.findById(entityId)
                     .map(LoanApplication::getDocuments)

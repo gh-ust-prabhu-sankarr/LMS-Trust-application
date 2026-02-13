@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-<<<<<<< HEAD
-import { customerApi, fileApi, kycApi, loanApi, productApi } from "../../api/domainApi.js";
-=======
-import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
+import { customerApi, fileApi, kycApi, loanApi, productApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
+import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 
 const money = (n) => {
   const value = Number(n);
@@ -172,14 +169,6 @@ export default function UserDashboard() {
           monthlyIncome: p?.monthlyIncome ?? "",
         });
       }
-<<<<<<< HEAD
-      if (loansRes.status === "fulfilled") setMyLoans(loansRes.value.data || []);
-      if (productsRes.status === "fulfilled") {
-        const list = productsRes.value.data || [];
-        const map = {};
-        list.forEach((p) => { if (p?.id) map[p.id] = p; });
-        setProductById(map);
-=======
       if (loansRes.status === "fulfilled") {
         const loans = loansRes.value.data || [];
         setMyLoans(loans);
@@ -187,7 +176,6 @@ export default function UserDashboard() {
         setClosedLoanIds(closedIds);
       } else {
         setClosedLoanIds([]);
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
       }
 
       try {
@@ -388,7 +376,8 @@ export default function UserDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Info label="Full Name" value={profile?.fullName} />
                 <Info label="Phone" value={profile?.phone} />
-                <Info label="PAN" value={profile?.panNumber} />
+                <Info label="PAN" value={maskPanNumber(profile?.panNumber)} />
+                <Info label="Bank Balance" value={money(profile?.bankBalance)} />
                 <Info label="Income" value={money(profile?.monthlyIncome)} />
                 <Info label="Employment" value={profile?.employmentType} />
                 <Info label="Credit Score" value={profile?.creditScore} />
@@ -427,6 +416,7 @@ export default function UserDashboard() {
             )}
           </div>
           <div className="space-y-4">
+             <StatCard label="Bank Balance" value={money(profile?.bankBalance)} />
              <StatCard label="KYC Status" value={kycStatusMeta.label} valueClassName="text-xl" />
              <StatCard label="Credit Score" value={profile?.creditScore ?? "-"} />
           </div>
@@ -445,7 +435,8 @@ export default function UserDashboard() {
           {myKyc && !kycEditing ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Info label="KYC Holder" value={myKyc.fullName} />
-              <Info label="PAN" value={myKyc.panNumber} />
+              <Info label="PAN" value={maskPanNumber(myKyc.panNumber)} />
+              <Info label="Aadhaar" value={maskAadhaarNumber(myKyc.aadhaarNumber)} />
               <Info label="Submission Attempts" value={`${kycSubmissionCount}/2`} />
               <div className="md:col-span-2 p-4 bg-slate-50 rounded-xl flex gap-4">
                 {myKyc.panDocumentFileId && <button onClick={() => handleFileDownload(myKyc.panDocumentFileId, "PAN.pdf")} className="text-xs font-bold text-emerald-700 underline">View PAN PDF</button>}
@@ -509,22 +500,12 @@ export default function UserDashboard() {
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-500">
-<<<<<<< HEAD
-                <tr><th className="p-4">Loan ID</th><th className="p-4">Loan</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {myLoans.map(loan => (
-                  <tr key={loan.id}>
-                    <td className="p-4 font-mono">{loan.id.slice(-8)}</td>
-                    <td className="p-4">{productById[loan.loanProductId]?.name || "Loan Product"}</td>
-=======
                 <tr><th className="p-4">Loan Type</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {myLoans.map(loan => (
                   <tr key={loan.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="p-4 font-medium">{loan.loanProductName || 'Unknown Loan'}</td>
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
                     <td className="p-4">{money(loan.requestedAmount)}</td>
                     <td className="p-4"><span className={`px-2 py-1 rounded-md border text-[10px] font-bold ${loanStatusClass(effectiveStatusOf(loan))}`}>{effectiveStatusOf(loan)}</span></td>
                     <td className="p-4"><button onClick={() => { setActiveLoanId(loan.id); setActiveTab("repayments"); }} className="text-emerald-700 font-bold hover:underline">View Details</button></td>
@@ -544,14 +525,7 @@ export default function UserDashboard() {
                 <h3 className="text-xs font-black uppercase mb-4">Select Loan</h3>
                 <select value={activeLoanId} onChange={(e) => setActiveLoanId(e.target.value)} className="w-full rounded-xl border-slate-300 text-sm">
                   <option value="">Choose a loan...</option>
-<<<<<<< HEAD
-                  {myLoans.map(l => {
-                    const name = productById[l.loanProductId]?.name || "Loan";
-                    return <option key={l.id} value={l.id}>{name} ({l.status})</option>;
-                  })}
-=======
                   {myLoans.map(l => <option key={l.id} value={l.id}>{l.loanProductName || 'Unknown Loan'} ({effectiveStatusOf(l)})</option>)}
->>>>>>> 5f8fa472cced563807dd4a56f40e1c39cab60726
                 </select>
             </div>
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">

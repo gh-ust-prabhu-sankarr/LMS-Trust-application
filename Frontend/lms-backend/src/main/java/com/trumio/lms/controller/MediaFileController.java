@@ -37,11 +37,12 @@ public class MediaFileController {
     public ResponseEntity<ApiResponse<MediaFile>> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("entityType") String entityType,
-            @RequestParam("entityId") String entityId) {
+            @RequestParam("entityId") String entityId,
+            @RequestParam(value = "displayName", required = false) String displayName) {
 
         String userId = getCurrentUserId();
         // Call service layer to upload and save file
-        MediaFile uploaded = mediaFileService.uploadFile(file, entityType, entityId, userId);
+        MediaFile uploaded = mediaFileService.uploadFile(file, entityType, entityId, userId, displayName);
 
         return ResponseEntity.ok(ApiResponse.success("File uploaded successfully", uploaded));
     }
