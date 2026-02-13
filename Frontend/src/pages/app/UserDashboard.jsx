@@ -233,6 +233,10 @@ export default function UserDashboard() {
       setEditing(false);
     } catch (e) {
       const data = e?.response?.data;
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        setEditError("Session expired or unauthorized. Please login again.");
+        return;
+      }
       if (data && typeof data === "object" && !Array.isArray(data) && !data.message) {
         const firstError = Object.values(data)[0];
         setEditError(String(firstError || "Update failed"));

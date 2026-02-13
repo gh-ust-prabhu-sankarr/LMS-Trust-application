@@ -1,34 +1,85 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { authApi } from "../api/authApi.js";
 import { getToken, removeToken, setToken } from "../utils/token.js";
-import { decodeToken, getRoleFromToken } from "../utils/jwt.js";
+import { decodeToken, getRoleFromToken, isTokenUsable } from "../utils/jwt.js";
 
 const AuthContext = createContext(null);
 
+const restoreValidToken = () => {
+  const stored = getToken();
+  if (!stored) return null;
+  if (!isTokenUsable(stored)) {
+    removeToken();
+    return null;
+  }
+  return stored;
+};
+
 export function AuthProvider({ children }) {
-  const [token, setTokenState] = useState(getToken());
-  const [role, setRole] = useState(getRoleFromToken(getToken()));
+  const [token, setTokenState] = useState(restoreValidToken);
+  const [role, setRole] = useState(() => getRoleFromToken(restoreValidToken()));
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const t = getToken();
-    const restoredRole = getRoleFromToken(t);
-    setTokenState(t);
-    setRole(restoredRole);
-    if (t) {
+    let alive = true;
+
+    const syncSession = async () => {
+      const t = restoreValidToken();
+      if (!alive) return;
+
+      if (!t) {
+        setTokenState(null);
+        setRole(null);
+        setUser(null);
+        return;
+      }
+
+      const restoredRole = getRoleFromToken(t);
       const payload = decodeToken(t);
-      setUser((prev) => prev || {
-        username: payload?.sub || payload?.username || "User",
-        email: payload?.email || null,
-        role: restoredRole || null,
-      });
-    }
+      setTokenState(t);
+      setRole(restoredRole);
+      setUser((prev) =>
+        prev || {
+          username: payload?.sub || payload?.username || "User",
+          email: payload?.email || null,
+          role: restoredRole || null,
+        },
+      );
+
+      try {
+        const meRes = await authApi.me();
+        if (!alive) return;
+
+        const me = meRes?.data?.data || meRes?.data || null;
+        if (me) {
+          setUser({
+            username: me.username || payload?.sub || "User",
+            email: me.email || payload?.email || null,
+            role: String(me.role || restoredRole || "").replace(/^ROLE_/, "") || null,
+          });
+          setRole(String(me.role || restoredRole || "").replace(/^ROLE_/, "") || null);
+        }
+      } catch {
+        if (!alive) return;
+        removeToken();
+        setTokenState(null);
+        setRole(null);
+        setUser(null);
+      }
+    };
+
+    syncSession();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const login = async ({ identifier, password }) => {
     const res = await authApi.login({ username: identifier, password });
     const t = res?.data?.data?.token || res?.data?.token || res?.data?.access_token;
     if (!t) throw new Error("Token missing in response");
+    if (!isTokenUsable(t)) throw new Error("Invalid token in response");
     setToken(t);
     setTokenState(t);
     const r = getRoleFromToken(t) || res?.data?.role || res?.data?.data?.role || null;
