@@ -58,7 +58,7 @@ export default function FeaturesSection() {
     visible: {
       opacity: 1,
       transition: {
-        staggerChildren: 0.2,
+        staggerChildren: 0.15,
         delayChildren: 0.1,
       },
     },
@@ -70,37 +70,56 @@ export default function FeaturesSection() {
   };
 
   return (
-    <section className="py-24 bg-white relative overflow-hidden">
-      <div
-        className="absolute inset-0 opacity-[0.04] pointer-events-none"
-        style={{
-          backgroundImage:
-            "linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      />
+    <section className="py-24 bg-[#f8fafc] relative overflow-hidden">
+      
+      {/* --- ENHANCED GREEN GRADIENT BACKGROUND --- */}
+      <div className="absolute inset-0 pointer-events-none">
+        {/* Soft emerald wash across the top */}
+        <div className="absolute top-0 left-1/4 w-[50%] h-[40%] bg-emerald-100/30 blur-[120px] rounded-full" />
+        {/* Deeper teal accent at the bottom right */}
+        <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[50%] bg-teal-50/50 blur-[100px] rounded-full" />
+        {/* Subtle radial rings to match the Hero style */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full flex items-center justify-center opacity-30">
+          {[...Array(3)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full border border-emerald-500/[0.08]"
+              style={{
+                width: `${(i + 1) * 400}px`,
+                height: `${(i + 1) * 400}px`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 lg:px-16 w-full relative z-10">
+      <div className="max-w-7xl mx-auto px-6 lg:px-20 w-full relative z-10">
+        
+        {/* Header Section */}
         <motion.div
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, margin: "-100px" }}
           variants={scrollReveal}
-          className="mb-16 text-center"
+          className="mb-20 text-center"
         >
-          <span className="text-emerald-700 font-bold tracking-[0.3em] uppercase text-[9px] bg-emerald-50 px-3 py-1 rounded-sm border border-emerald-100">
+          <span className="text-emerald-700 font-bold tracking-[0.3em] uppercase text-[9px] bg-white px-4 py-1.5 rounded-full border border-emerald-100 shadow-sm">
             Why Choose Us
           </span>
 
-          <h2 className="text-4xl md:text-5xl font-serif text-slate-900 mt-4 mb-4">
-            Everything You Need for Your <span className="italic text-emerald-700">Financial Goals</span>
+          <h2 className="text-4xl md:text-5xl font-serif text-[#0F172A] mt-6 mb-4 leading-tight">
+            Everything You Need for Your <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500 font-semibold">
+              Financial Goals
+            </span>
           </h2>
 
-          <p className="text-slate-600 text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
+          <p className="text-slate-500 text-base md:text-lg max-w-2xl mx-auto leading-relaxed font-light">
             Our platform is designed to make borrowing simple, affordable, and stress-free. Experience world-class service with cutting-edge technology.
           </p>
-              </motion.div>
+        </motion.div>
 
+        {/* Features Grid */}
         <motion.div
           initial="hidden"
           whileInView="visible"
@@ -114,41 +133,50 @@ export default function FeaturesSection() {
               <motion.div
                 key={index}
                 variants={itemVariants}
-                className="p-8 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white hover:shadow-lg transition-all duration-300 hover:border-slate-300"
+                whileHover={{ y: -10 }}
+                className="group p-8 rounded-3xl border border-white bg-white/60 backdrop-blur-md shadow-[0_15px_40px_-15px_rgba(0,0,0,0.05)] hover:shadow-[0_30px_60px_-15px_rgba(16,185,129,0.15)] transition-all duration-500"
               >
-                <div className={`w-14 h-14 ${feature.color} rounded-xl flex items-center justify-center mb-5 shadow-lg`}>
-                  <Icon size={28} className="text-white" strokeWidth={2} />
+                <div className={`w-14 h-14 ${feature.color} rounded-2xl flex items-center justify-center mb-6 shadow-lg transform group-hover:scale-110 transition-transform duration-500`}>
+                  <Icon size={26} className="text-white" strokeWidth={2.5} />
                 </div>
 
-                <h3 className="text-xl font-bold text-slate-900 mb-3">{feature.title}</h3>
+                <h3 className="text-xl font-bold text-[#0F172A] mb-3 group-hover:text-emerald-700 transition-colors">
+                  {feature.title}
+                </h3>
 
-                <p className="text-slate-600 text-sm leading-relaxed">{feature.description}</p>
+                <p className="text-slate-500 text-sm leading-relaxed font-light">
+                  {feature.description}
+                </p>
               </motion.div>
             );
           })}
         </motion.div>
 
+        {/* CTA Banner with Gradient */}
         <motion.div
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, margin: "-50px" }}
           variants={scrollReveal}
-          className="mt-20 p-10 lg:p-16 rounded-2xl bg-gradient-to-r from-emerald-50 to-blue-50 border border-emerald-200"
+          className="relative mt-24 overflow-hidden rounded-[2.5rem] bg-[#0F172A] p-10 lg:p-16 shadow-2xl"
         >
-          <div className="max-w-3xl">
-            <h3 className="text-2xl md:text-3xl font-serif text-slate-900 mb-4">
-              Ready to Achieve Your Dreams?
+          {/* Decorative Gradient for CTA */}
+          <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-emerald-600/20 to-transparent pointer-events-none" />
+          
+          <div className="relative z-10 max-w-3xl">
+            <h3 className="text-3xl md:text-4xl font-serif text-white mb-6">
+              Ready to Achieve Your <span className="text-emerald-400 italic">Dreams?</span>
             </h3>
 
-            <p className="text-slate-700 text-base md:text-lg mb-8 leading-relaxed">
-              Join thousands of satisfied customers who have already transformed their lives with our loan products. Whether it's education, personal needs, business expansion, or a new vehicle, we have the perfect loan for you.
+            <p className="text-slate-300 text-base md:text-lg mb-10 leading-relaxed font-light">
+              Join thousands of satisfied customers who have already transformed their lives. Whether it's education, business expansion, or personal needs, we have the perfect path for you.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row gap-5">
               <button
                 type="button"
                 onClick={scrollToFunding}
-                className="px-8 py-3.5 bg-emerald-700 text-white font-bold uppercase text-[11px] tracking-widest rounded-lg hover:bg-emerald-800 transition-all shadow-md hover:shadow-lg active:scale-95"
+                className="px-10 py-4 bg-emerald-500 text-white font-bold uppercase text-[11px] tracking-[0.2em] rounded-xl hover:bg-emerald-400 transition-all shadow-xl shadow-emerald-900/20 active:scale-95"
               >
                 Get Started Now
               </button>
@@ -156,16 +184,14 @@ export default function FeaturesSection() {
               <button
                 type="button"
                 onClick={scrollToFunding}
-                className="px-8 py-3.5 border-2 border-emerald-700 text-emerald-700 font-bold uppercase text-[11px] tracking-widest rounded-lg hover:bg-emerald-50 transition-all"
+                className="px-10 py-4 border border-slate-700 text-white font-bold uppercase text-[11px] tracking-[0.2em] rounded-xl hover:bg-white/5 transition-all"
               >
                 View All Products
               </button>
             </div>
           </div>
-              </motion.div>
+        </motion.div>
       </div>
     </section>
   );
 }
-
-
