@@ -31,4 +31,5 @@ build/
 
 ### VS Code ###
 .vscode/
-.uploads
+uploads
+.idea/workspace.xml

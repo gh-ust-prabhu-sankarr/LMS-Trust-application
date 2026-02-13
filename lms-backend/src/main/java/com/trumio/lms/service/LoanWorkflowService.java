@@ -49,7 +49,7 @@ public class LoanWorkflowService {
 
         LoanApplication saved = loanApplicationRepository.save(loan);
         auditService.log(getCurrentUserId(), "LOAN_UNDER_REVIEW", "LOAN_APPLICATION",
-                loanId, "Loan moved to review");
+                loan, saved, loanId, "Loan moved to review");
 
         return ApiResponse.success("Loan moved to review", saved);
     }
@@ -78,7 +78,7 @@ public class LoanWorkflowService {
             emiService.generateSchedule(saved);
         }
         auditService.log(getCurrentUserId(), "LOAN_APPROVED", "LOAN_APPLICATION",
-                loanId, "Loan approved: " + request.getComments());
+                request, saved, loanId, "Loan approved: " + request.getComments());
 
         return ApiResponse.success("Loan approved successfully", saved);
     }
@@ -94,7 +94,7 @@ public class LoanWorkflowService {
 
         LoanApplication saved = loanApplicationRepository.save(loan);
         auditService.log(getCurrentUserId(), "LOAN_REJECTED", "LOAN_APPLICATION",
-                loanId, "Loan rejected: " + reason);
+                reason, saved, loanId, "Loan rejected: " + reason);
 
         return ApiResponse.success("Loan rejected", saved);
     }
@@ -117,7 +117,7 @@ public class LoanWorkflowService {
         saved = loanApplicationRepository.save(saved);
 
         auditService.log(getCurrentUserId(), "LOAN_DISBURSED", "LOAN_APPLICATION",
-                loanId, "Loan disbursed and activated");
+                loan, saved, loanId, "Loan disbursed and activated");
 
         return ApiResponse.success("Loan disbursed successfully", saved);
     }

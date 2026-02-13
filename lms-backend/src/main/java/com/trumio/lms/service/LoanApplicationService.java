@@ -101,7 +101,7 @@ public class LoanApplicationService {
         LoanApplication saved = loanApplicationRepository.save(application);
 
         auditService.log(customer.getUserId(), "LOAN_CREATED", "LOAN_APPLICATION",
-                saved.getId(), "Loan application created");
+                request, saved, saved.getId(), "Loan application created");
 
         return ApiResponse.success("Application created successfully", saved);
     }
@@ -125,7 +125,7 @@ public class LoanApplicationService {
         LoanApplication saved = loanApplicationRepository.save(loan);
 
         auditService.log(customer.getUserId(), "LOAN_SUBMITTED", "LOAN_APPLICATION",
-                saved.getId(), "Loan application submitted");
+                loan, saved, saved.getId(), "Loan application submitted");
 
         return ApiResponse.success("Application submitted successfully", saved);
     }
