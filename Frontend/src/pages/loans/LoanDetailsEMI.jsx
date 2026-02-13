@@ -329,7 +329,6 @@ export default function LoanDetailsEMI() {
                     step: 50000,
                     unit: "INR",
                   },
-                  { label: "Interest Rate", value: rate, set: setRate, min: 4, max: 36, step: 0.05, unit: "%" },
                   {
                     label: "Loan Tenure",
                     value: tenureYears,
@@ -358,6 +357,16 @@ export default function LoanDetailsEMI() {
                     />
                   </div>
                 ))}
+
+                <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      Estimated Interest Rate
+                    </span>
+                    <span className={`text-sm font-black ${theme.text}`}>{rate}% p.a.</span>
+                  </div>
+
+                </div>
               </div>
 
               <div className={`flex flex-col items-center bg-white rounded-[2.5rem] p-8 border ${theme.border} shadow-[0_20px_50px_rgba(0,0,0,0.04)]`}>

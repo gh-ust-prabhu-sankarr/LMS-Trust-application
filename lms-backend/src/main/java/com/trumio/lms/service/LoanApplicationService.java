@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Arrays;
 
 @Service
 @RequiredArgsConstructor
@@ -69,6 +68,11 @@ public class LoanApplicationService {
             throw new BusinessException(ErrorCode.INSUFFICIENT_CREDIT_SCORE);
         }
 
+        double fixedInterestRate = determineInterestRateByCreditScore(
+                customer.getCreditScore(),
+                product.getInterestRate()
+        );
+
         // Block same product if already applied (regardless of status)
         // User can apply for each loan type only once
         List<LoanApplication> existingSameProduct = loanApplicationRepository
@@ -81,7 +85,7 @@ public class LoanApplicationService {
         // Calculate EMI
         double emi = EMICalculator.calculateEMI(
                 request.getRequestedAmount(),
-                product.getInterestRate(),
+                fixedInterestRate,
                 request.getTenure()
         );
 
@@ -91,7 +95,7 @@ public class LoanApplicationService {
                 .loanProductName(product.getName())
                 .requestedAmount(request.getRequestedAmount())
                 .tenure(request.getTenure())
-                .interestRate(product.getInterestRate())
+                .interestRate(fixedInterestRate)
                 .emi(emi)
                 .status(LoanStatus.DRAFT)
                 .createdAt(LocalDateTime.now())
@@ -171,5 +175,25 @@ public class LoanApplicationService {
                 }
             }
         }
+    }
+
+    private double determineInterestRateByCreditScore(Integer creditScore, Double baseRate) {
+        double adjustedRate = baseRate;
+
+        if (creditScore >= 800) {
+            adjustedRate = baseRate - 1.5;
+        } else if (creditScore >= 750) {
+            adjustedRate = baseRate - 1.0;
+        } else if (creditScore >= 700) {
+            adjustedRate = baseRate - 0.5;
+        } else if (creditScore >= 650) {
+            adjustedRate = baseRate;
+        } else if (creditScore >= 600) {
+            adjustedRate = baseRate + 1.0;
+        } else {
+            adjustedRate = baseRate + 2.0;
+        }
+
+        return Math.round(adjustedRate * 100.0) / 100.0;
     }
 }

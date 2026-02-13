@@ -11,8 +11,7 @@ const toCurrency = (value) =>
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(value || 0);
-//addeddd
-//dwsad
+
 const toFieldInputType = (type = "text") => {
   if (type === "textarea") return "textarea";
   if (type === "number") return "number";
@@ -59,7 +58,12 @@ export default function LoanApplication() {
     setDocuments({});
   }, [activeLoan?.slug, applicationFields]);
 
-  const { amount = activeLoan?.minAmount || 0, rate = activeLoan?.interestRate || 0, tenure = Math.max(1, Math.round((activeLoan?.minTenure || 12) / 12)), emi = 0 } = state || {};
+  const {
+    amount = activeLoan?.minAmount || 0,
+    rate = activeLoan?.interestRate || 0,
+    tenure = Math.max(1, Math.round((activeLoan?.minTenure || 12) / 12)),
+    emi = 0,
+  } = state || {};
 
   const onFieldChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -99,19 +103,10 @@ export default function LoanApplication() {
         return;
       }
 
-      const loanTypeMap = {};
-      for (const field of applicationFields) {
-        loanTypeMap[field.key] = String(formData[field.key] ?? "");
-      }
-
       const payload = {
         loanProductId: activeLoan.id,
         requestedAmount: Number(amount),
         tenure: Number(tenure) * 12,
-        emi: Math.max(1, Math.round(Number(emi) || 0)),
-        interest_Rate: Number(rate),
-        loan_type: loanTypeMap,
-        custEmail: profile?.email || formData.email || "",
       };
 
       const createRes = await loanApi.create(payload);
@@ -223,9 +218,12 @@ export default function LoanApplication() {
                 <SummaryBox label="Tenure" value={`${tenure} Years`} />
               </div>
               <div className="flex justify-between items-center px-2">
-                <span className="text-xs text-slate-500 font-medium">Interest Rate</span>
+                <span className="text-xs text-slate-500 font-medium">Estimated Interest Rate</span>
                 <span className="text-xs font-bold text-slate-700">{rate}% p.a.</span>
               </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Final interest rate and EMI are fixed by backend using your credit score.
+              </p>
             </div>
 
             <div className="mt-10 pt-6 border-t border-slate-100">
