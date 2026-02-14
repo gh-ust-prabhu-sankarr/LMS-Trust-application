@@ -17,21 +17,21 @@ import LoanApplication from "./pages/loans/applications/LoanApplication.jsx";
 
 export default function App() {
   return (
-    <div className="relative min-h-screen overflow-x-hidden hero-page-bg">
+    <div className="relative min-h-screen overflow-x-hidden app-gradient-bg">
       <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute inset-0 hero-page-bg" />
+        <div className="absolute inset-0 app-gradient-bg" />
         <div
-          className="absolute inset-0 opacity-[0.09]"
-          style={{
-            backgroundImage:
-              "linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)",
-            backgroundSize: "40px 40px",
-          }}
+          className="absolute top-[-12%] left-[10%] h-[42vh] w-[35vw] rounded-full blur-[130px]"
+          style={{ backgroundColor: "color-mix(in srgb, var(--fs-emerald) 22%, transparent)" }}
         />
-        <div className="absolute top-[-10%] right-[-5%] h-[600px] w-[600px] rounded-full bg-emerald-400/20 blur-[140px]" />
-        <div className="absolute bottom-[-10%] left-[-5%] h-[500px] w-[500px] rounded-full bg-blue-400/15 blur-[120px]" />
-        <div className="absolute top-[30%] left-[20%] h-[300px] w-[300px] rounded-full bg-indigo-400/10 blur-[100px]" />
-        <div className="absolute inset-0 backdrop-blur-[1.5px]" />
+        <div
+          className="absolute top-[10%] right-[8%] h-[36vh] w-[32vw] rounded-full blur-[125px]"
+          style={{ backgroundColor: "color-mix(in srgb, #6ee7b7 24%, transparent)" }}
+        />
+        <div
+          className="absolute bottom-[-16%] right-[6%] h-[46vh] w-[36vw] rounded-full blur-[145px]"
+          style={{ backgroundColor: "color-mix(in srgb, #34d399 16%, transparent)" }}
+        />
       </div>
 
       <div className="relative z-10">
