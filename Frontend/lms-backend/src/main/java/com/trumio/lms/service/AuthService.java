@@ -37,13 +37,21 @@ public class AuthService {
     private final AuditService auditService;
 
     public JwtResponse login(LoginRequest request) {
+        String identifier = request.getUsername();
+        String principalUsername = identifier;
+        if (identifier != null && identifier.contains("@")) {
+            principalUsername = userRepository.findByEmail(identifier)
+                    .map(User::getUsername)
+                    .orElse(identifier);
+        }
+
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(principalUsername, request.getPassword())
         );
 
         String token = tokenProvider.generateToken(authentication);
 
-        User user = userRepository.findByUsername(request.getUsername())
+        User user = userRepository.findByUsername(principalUsername)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         auditService.log(user.getId(), "LOGIN", "USER", user.getId(), "User logged in");
