@@ -41,9 +41,21 @@ export default function UserDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profile, setProfile] = useState(null);
+  const [profileForm, setProfileForm] = useState({
+    fullName: "",
+    phone: "",
+    panNumber: "",
+    address: "",
+    employmentType: "",
+    monthlyIncome: "",
+  });
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileSuccess, setProfileSuccess] = useState("");
   const [myLoans, setMyLoans] = useState([]);
   const [activeLoanId, setActiveLoanId] = useState("");
-  const { schedule, docs, actionBusy, payInstallment } = useEmiSchedule(activeLoanId);
+  const { schedule, docs, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
+  const [bulkAmount, setBulkAmount] = useState("");
   const [myKyc, setMyKyc] = useState(null);
 
   // --- PAGINATION STATE ---
@@ -56,6 +68,9 @@ export default function UserDashboard() {
   const [panFile, setPanFile] = useState(null);
   const [aadhaarFile, setAadhaarFile] = useState(null);
   const [kycForm, setKycForm] = useState({ fullName: "", dob: "", panNumber: "", aadhaarNumber: "" });
+  const [kycBusy, setKycBusy] = useState(false);
+  const [kycError, setKycError] = useState("");
+  const [kycSuccess, setKycSuccess] = useState("");
 
   const formatDate = (val) => val ? new Date(val).toLocaleDateString("en-IN") : "-";
 
@@ -63,7 +78,16 @@ export default function UserDashboard() {
     setLoading(true);
     try {
       const [pRes, lRes] = await Promise.all([customerApi.getMyProfile(), loanApi.getMyLoans()]);
-      setProfile(pRes.data);
+      const p = pRes.data;
+      setProfile(p);
+      setProfileForm({
+        fullName: p?.fullName || "",
+        phone: p?.phone || "",
+        panNumber: p?.panNumber || "",
+        address: p?.address || "",
+        employmentType: p?.employmentType || "",
+        monthlyIncome: p?.monthlyIncome ?? "",
+      });
       const loans = lRes.data || [];
       setMyLoans(loans);
       const kRes = await kycApi.getMyKyc().catch(() => null);
@@ -75,6 +99,82 @@ export default function UserDashboard() {
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { setCurrentPage(1); }, [activeLoanId]);
 
+  useEffect(() => {
+    if (!myKyc) {
+      setKycForm({
+        fullName: profile?.fullName || "",
+        dob: "",
+        panNumber: profile?.panNumber || "",
+        aadhaarNumber: "",
+      });
+      return;
+    }
+    setKycForm({
+      fullName: myKyc?.fullName || "",
+      dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
+      panNumber: myKyc?.panNumber || "",
+      aadhaarNumber: myKyc?.aadhaarNumber || "",
+    });
+  }, [myKyc, profile]);
+
+  const handleProfileField = (key, value) => {
+    setProfileForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const resetProfileEdit = () => {
+    setProfileForm({
+      fullName: profile?.fullName || "",
+      phone: profile?.phone || "",
+      panNumber: profile?.panNumber || "",
+      address: profile?.address || "",
+      employmentType: profile?.employmentType || "",
+      monthlyIncome: profile?.monthlyIncome ?? "",
+    });
+    setProfileError("");
+    setProfileSuccess("");
+    setEditing(false);
+  };
+
+  const saveProfile = async () => {
+    setProfileError("");
+    setProfileSuccess("");
+
+    const payload = {
+      fullName: profileForm.fullName.trim(),
+      phone: profileForm.phone.trim(),
+      panNumber: profileForm.panNumber.trim().toUpperCase(),
+      address: profileForm.address.trim(),
+      employmentType: profileForm.employmentType.trim(),
+      monthlyIncome: Number(profileForm.monthlyIncome),
+    };
+
+    if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType || !Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
+      setProfileError("Fill all profile fields with valid values.");
+      return;
+    }
+
+    setProfileBusy(true);
+    try {
+      const res = await customerApi.updateMyProfile(payload);
+      const updated = res?.data?.data || profile;
+      setProfile(updated);
+      setProfileForm({
+        fullName: updated?.fullName || "",
+        phone: updated?.phone || "",
+        panNumber: updated?.panNumber || "",
+        address: updated?.address || "",
+        employmentType: updated?.employmentType || "",
+        monthlyIncome: updated?.monthlyIncome ?? "",
+      });
+      setProfileSuccess("Profile updated successfully.");
+      setEditing(false);
+    } catch (e) {
+      setProfileError(e?.response?.data?.message || e?.message || "Failed to update profile");
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
   const paginatedEMI = useMemo(() => {
     const installments = schedule?.installments || [];
     const start = (currentPage - 1) * pageSize;
@@ -84,6 +184,71 @@ export default function UserDashboard() {
   const totalPages = Math.ceil((schedule?.installments?.length || 0) / pageSize);
 
   const handleFileDownload = (id, name) => fileApi.download(id, name).catch(() => alert("Download failed"));
+  const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
+
+  const KYC_MAX_ATTEMPTS = 2;
+  const KYC_COOLDOWN_MONTHS = 3;
+  const attemptsUsed = Number(myKyc?.submissionCount || 0);
+  const lastSubmittedAt = myKyc?.submittedAt ? new Date(myKyc.submittedAt) : null;
+  const nextEligibleAt = lastSubmittedAt ? new Date(lastSubmittedAt) : null;
+  if (nextEligibleAt) nextEligibleAt.setMonth(nextEligibleAt.getMonth() + KYC_COOLDOWN_MONTHS);
+  const kycLocked = attemptsUsed >= KYC_MAX_ATTEMPTS && nextEligibleAt && new Date() < nextEligibleAt;
+
+  const resetKycEditing = () => {
+    setKycEditing(false);
+    setKycError("");
+    setKycSuccess("");
+    setPanFile(null);
+    setAadhaarFile(null);
+    if (myKyc) {
+      setKycForm({
+        fullName: myKyc?.fullName || "",
+        dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
+        panNumber: myKyc?.panNumber || "",
+        aadhaarNumber: myKyc?.aadhaarNumber || "",
+      });
+    }
+  };
+
+  const submitKyc = async () => {
+    setKycError("");
+    setKycSuccess("");
+
+    const payload = {
+      fullName: kycForm.fullName.trim(),
+      dob: kycForm.dob,
+      panNumber: kycForm.panNumber.trim().toUpperCase(),
+      aadhaarNumber: kycForm.aadhaarNumber.trim(),
+    };
+
+    if (!payload.fullName || !payload.dob || !payload.panNumber || !payload.aadhaarNumber) {
+      setKycError("Fill all KYC fields.");
+      return;
+    }
+    if (!panFile || !aadhaarFile) {
+      setKycError("Upload both PAN and Aadhaar documents.");
+      return;
+    }
+    if (kycLocked) {
+      setKycError(`KYC updates are locked until ${formatDate(nextEligibleAt)}.`);
+      return;
+    }
+
+    setKycBusy(true);
+    try {
+      const res = await kycApi.submit(payload, panFile, aadhaarFile);
+      const updated = res?.data?.data || null;
+      if (updated) setMyKyc(updated);
+      setKycSuccess("KYC submitted successfully.");
+      setKycEditing(false);
+      setPanFile(null);
+      setAadhaarFile(null);
+    } catch (e) {
+      setKycError(e?.response?.data?.message || e?.message || "KYC submission failed");
+    } finally {
+      setKycBusy(false);
+    }
+  };
 
   // --- UI ATOMS ---
   const SidebarButton = ({ id, label, icon: Icon }) => (
@@ -147,18 +312,60 @@ export default function UserDashboard() {
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
                   <div className="flex justify-between items-center mb-10">
                     <h3 className="text-xl font-bold text-slate-900 tracking-tight">Identity Information</h3>
-                    <button onClick={() => setEditing(!editing)} className="text-[10px] font-black uppercase tracking-widest px-6 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-900 hover:text-white transition-all shadow-sm">
-                      {editing ? "Discard" : "Modify Details"}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {editing && (
+                        <button
+                          onClick={saveProfile}
+                          disabled={profileBusy}
+                          className="text-[10px] font-black uppercase tracking-widest px-6 py-2.5 rounded-xl border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm disabled:opacity-60"
+                        >
+                          {profileBusy ? "Saving..." : "Save"}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => (editing ? resetProfileEdit() : setEditing(true))}
+                        className="text-[10px] font-black uppercase tracking-widest px-6 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                      >
+                        {editing ? "Discard" : "Modify Details"}
+                      </button>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <InfoBox label="Legal Name" value={profile?.fullName} />
-                    <InfoBox label="Contact" value={profile?.phone} />
-                    <InfoBox label="Tax ID (PAN)" value={maskPanNumber(profile?.panNumber)} />
-                    <InfoBox label="Employment" value={profile?.employmentType} />
-                    <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
-                    <InfoBox label="CIBIL Score" value={profile?.creditScore} />
-                  </div>
+                  {profileError && <p className="mb-4 text-sm font-semibold text-rose-600">{profileError}</p>}
+                  {profileSuccess && <p className="mb-4 text-sm font-semibold text-emerald-700">{profileSuccess}</p>}
+
+                  {editing ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Field label="Legal Name">
+                        <input value={profileForm.fullName} onChange={(e) => handleProfileField("fullName", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Contact">
+                        <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Tax ID (PAN)">
+                        <input value={profileForm.panNumber} onChange={(e) => handleProfileField("panNumber", e.target.value.toUpperCase())} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Employment">
+                        <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Income">
+                        <input type="number" min="1" value={profileForm.monthlyIncome} onChange={(e) => handleProfileField("monthlyIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Address">
+                        <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <InfoBox label="CIBIL Score" value={profile?.creditScore} />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <InfoBox label="Legal Name" value={profile?.fullName} />
+                      <InfoBox label="Contact" value={profile?.phone} />
+                      <InfoBox label="Tax ID (PAN)" value={maskPanNumber(profile?.panNumber)} />
+                      <InfoBox label="Employment" value={profile?.employmentType} />
+                      <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
+                      <InfoBox label="Address" value={profile?.address} />
+                      <InfoBox label="CIBIL Score" value={profile?.creditScore} />
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -169,10 +376,34 @@ export default function UserDashboard() {
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
                   <div className="flex justify-between items-center mb-8">
                     <h3 className="text-xl font-bold text-slate-900">Verification Hub</h3>
-                    <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${KYC_META[myKyc?.status || 'PENDING'].cls}`}>
-                       {KYC_META[myKyc?.status || 'PENDING'].icon} {KYC_META[myKyc?.status || 'PENDING'].label}
+                    <div className="flex items-center gap-3">
+                      {myKyc && (
+                        <button
+                          disabled={kycLocked}
+                          onClick={() => setKycEditing((v) => !v)}
+                          className="text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-900 hover:text-white transition-all disabled:opacity-50"
+                        >
+                          {kycEditing ? "Cancel Edit" : "Modify KYC"}
+                        </button>
+                      )}
+                      <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${myKyc ? KYC_META[myKyc?.status || 'PENDING'].cls : "bg-slate-100 text-slate-700 border-slate-200"}`}>
+                        {myKyc ? KYC_META[myKyc?.status || "PENDING"].icon : <AlertCircle size={14} />} {myKyc ? KYC_META[myKyc?.status || "PENDING"].label : "NOT SUBMITTED"}
+                      </div>
                     </div>
                   </div>
+
+                  <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <InfoBox label="Submission State" value={myKyc ? "Submitted" : "Not Submitted"} />
+                    <InfoBox label="Attempts Used" value={`${attemptsUsed}/${KYC_MAX_ATTEMPTS}`} />
+                    <InfoBox label="Next Eligible Update" value={kycLocked ? formatDate(nextEligibleAt) : "Available"} />
+                  </div>
+                  {kycLocked && (
+                    <p className="mb-4 text-sm font-semibold text-amber-700">
+                      You reached the maximum KYC update attempts. You can modify again after {formatDate(nextEligibleAt)}.
+                    </p>
+                  )}
+                  {kycError && <p className="mb-4 text-sm font-semibold text-rose-600">{kycError}</p>}
+                  {kycSuccess && <p className="mb-4 text-sm font-semibold text-emerald-700">{kycSuccess}</p>}
 
                   {myKyc && !kycEditing ? (
                     <div className="space-y-8">
@@ -190,12 +421,80 @@ export default function UserDashboard() {
                   ) : (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <Field label="Full Name"><input className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" placeholder="As per PAN" /></Field>
-                        <Field label="DOB"><input type="date" className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" /></Field>
-                        <Field label="PAN Card (PDF)"><div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors"><UploadCloud className="text-slate-400 mb-2"/><span className="text-[10px] text-slate-500 font-bold uppercase">Upload PDF</span><input type="file" className="absolute inset-0 opacity-0 cursor-pointer" /></div></Field>
-                        <Field label="Aadhaar Card (PDF)"><div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors"><UploadCloud className="text-slate-400 mb-2"/><span className="text-[10px] text-slate-500 font-bold uppercase">Upload PDF</span><input type="file" className="absolute inset-0 opacity-0 cursor-pointer" /></div></Field>
+                        <Field label="Full Name">
+                          <input
+                            value={kycForm.fullName}
+                            onChange={(e) => handleKycField("fullName", e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="As per PAN"
+                          />
+                        </Field>
+                        <Field label="DOB">
+                          <input
+                            type="date"
+                            value={kycForm.dob}
+                            onChange={(e) => handleKycField("dob", e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                          />
+                        </Field>
+                        <Field label="PAN Number">
+                          <input
+                            value={kycForm.panNumber}
+                            onChange={(e) => handleKycField("panNumber", e.target.value.toUpperCase())}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="ABCDE1234F"
+                          />
+                        </Field>
+                        <Field label="Aadhaar Number">
+                          <input
+                            value={kycForm.aadhaarNumber}
+                            onChange={(e) => handleKycField("aadhaarNumber", e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="12 digit Aadhaar"
+                          />
+                        </Field>
+                        <Field label="PAN Card (PDF)">
+                          <div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors">
+                            <UploadCloud className="text-slate-400 mb-2"/>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">{panFile?.name || "Upload PDF"}</span>
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              onChange={(e) => setPanFile(e.target.files?.[0] || null)}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                          </div>
+                        </Field>
+                        <Field label="Aadhaar Card (PDF)">
+                          <div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors">
+                            <UploadCloud className="text-slate-400 mb-2"/>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">{aadhaarFile?.name || "Upload PDF"}</span>
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              onChange={(e) => setAadhaarFile(e.target.files?.[0] || null)}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                          </div>
+                        </Field>
                       </div>
-                      <button className="bg-slate-900 text-white px-10 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all">Submit Verification</button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          disabled={kycBusy || kycLocked}
+                          onClick={submitKyc}
+                          className="bg-slate-900 text-white px-10 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all disabled:opacity-60"
+                        >
+                          {kycBusy ? "Submitting..." : "Submit Verification"}
+                        </button>
+                        {kycEditing && (
+                          <button
+                            onClick={resetKycEditing}
+                            className="px-6 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 transition-all"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -239,6 +538,38 @@ export default function UserDashboard() {
                     <option value="">Select an active facility...</option>
                     {myLoans.map(l => <option key={l.id} value={l.id}>{l.loanProductName} ({money(l.requestedAmount)})</option>)}
                   </select>
+
+                  {activeLoanId && (
+                    <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
+                        Pay Multiple EMIs (Advance Payment)
+                      </p>
+                      <div className="flex flex-col gap-3 md:flex-row">
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          value={bulkAmount}
+                          onChange={(e) => setBulkAmount(e.target.value)}
+                          placeholder="Enter amount (e.g. 120000)"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-emerald-500 outline-none transition-colors"
+                        />
+                        <button
+                          disabled={actionBusy}
+                          onClick={async () => {
+                            const ok = await payCustomAmount(bulkAmount);
+                            if (ok) setBulkAmount("");
+                          }}
+                          className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:border-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          Pay Custom Amount
+                        </button>
+                      </div>
+                      {actionError && (
+                        <p className="mt-2 text-xs font-semibold text-rose-600">{actionError}</p>
+                      )}
+                    </div>
+                  )}
 
                   {schedule?.installments ? (
                     <div className="space-y-4">

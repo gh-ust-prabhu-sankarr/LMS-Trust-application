@@ -1,79 +1,26 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 import { authApi } from "../api/authApi.js";
 import { getToken, removeToken, setToken } from "../utils/token.js";
-import { decodeToken, getRoleFromToken, isTokenUsable } from "../utils/jwt.js";
+import { decodeToken, getRoleFromToken } from "../utils/jwt.js";
 
 const AuthContext = createContext(null);
 
-const restoreValidToken = () => {
-  const stored = getToken();
-  if (!stored) return null;
-  if (!isTokenUsable(stored)) {
-    removeToken();
-    return null;
-  }
-  return stored;
-};
-
 export function AuthProvider({ children }) {
-  const [token, setTokenState] = useState(restoreValidToken);
-  const [role, setRole] = useState(() => getRoleFromToken(restoreValidToken()));
-  const [user, setUser] = useState(null);
+  const initialToken = getToken();
+  const initialRole = getRoleFromToken(initialToken);
+  const initialPayload = initialToken ? decodeToken(initialToken) : null;
 
-  useEffect(() => {
-    let alive = true;
-
-    const syncSession = async () => {
-      const t = restoreValidToken();
-      if (!alive) return;
-
-      if (!t) {
-        setTokenState(null);
-        setRole(null);
-        setUser(null);
-        return;
-      }
-
-      const restoredRole = getRoleFromToken(t);
-      const payload = decodeToken(t);
-      setTokenState(t);
-      setRole(restoredRole);
-      setUser((prev) =>
-        prev || {
-          username: payload?.sub || payload?.username || "User",
-          email: payload?.email || null,
-          role: restoredRole || null,
-        },
-      );
-
-      try {
-        const meRes = await authApi.me();
-        if (!alive) return;
-
-        const me = meRes?.data?.data || meRes?.data || null;
-        if (me) {
-          setUser({
-            username: me.username || payload?.sub || "User",
-            email: me.email || payload?.email || null,
-            role: String(me.role || restoredRole || "").replace(/^ROLE_/, "") || null,
-          });
-          setRole(String(me.role || restoredRole || "").replace(/^ROLE_/, "") || null);
+  const [token, setTokenState] = useState(initialToken);
+  const [role, setRole] = useState(initialRole);
+  const [user, setUser] = useState(
+    initialToken
+      ? {
+          username: initialPayload?.sub || initialPayload?.username || "User",
+          email: initialPayload?.email || null,
+          role: initialRole || null,
         }
-      } catch {
-        if (!alive) return;
-        removeToken();
-        setTokenState(null);
-        setRole(null);
-        setUser(null);
-      }
-    };
-
-    syncSession();
-
-    return () => {
-      alive = false;
-    };
-  }, []);
+      : null
+  );
 
   const login = async ({ identifier, password }) => {
     const normalizedIdentifier = identifier?.trim();
@@ -84,7 +31,6 @@ export function AuthProvider({ children }) {
     });
     const t = res?.data?.data?.token || res?.data?.token || res?.data?.access_token;
     if (!t) throw new Error("Token missing in response");
-    if (!isTokenUsable(t)) throw new Error("Invalid token in response");
     setToken(t);
     setTokenState(t);
     const r = getRoleFromToken(t) || res?.data?.role || res?.data?.data?.role || null;

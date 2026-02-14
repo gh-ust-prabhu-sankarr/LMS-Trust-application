@@ -65,6 +65,31 @@ export function useEmiSchedule(activeLoanId) { //when loan chnaged ..it loads
     }
   }, [activeLoanId, load]);
 
+  const payCustomAmount = useCallback(async (amount) => {
+    if (!activeLoanId) return false;
+    const numericAmount = Number(amount || 0);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setActionError("Enter a valid amount");
+      return false;
+    }
+
+    setActionBusy(true);
+    setActionError("");
+    try {
+      await repaymentApi.makePayment({
+        loanApplicationId: activeLoanId,
+        amount: numericAmount,
+      });
+      await load();
+      return true;
+    } catch (e) {
+      setActionError(e?.response?.data?.message || e?.message || "Payment failed");
+      return false;
+    } finally {
+      setActionBusy(false);
+    }
+  }, [activeLoanId, load]);
+
   const missInstallment = useCallback(async () => {
     if (!activeLoanId) return false;
     setActionBusy(true);
@@ -94,6 +119,7 @@ export function useEmiSchedule(activeLoanId) { //when loan chnaged ..it loads
     actionError,
     load,
     payInstallment,
+    payCustomAmount,
     missInstallment,
   };
 }
