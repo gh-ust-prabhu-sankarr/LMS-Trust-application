@@ -30,7 +30,7 @@ const colorByTheme = (theme) => {
 };
 
 const toSlide = (loan) => ({
-  id: loan?.id,
+  id: loan?.id, 
   title: loan?.name || "Loan Product",
   subtitle: loan?.badgeText || "Flexible Credit",
   desc: loan?.description || "Flexible loan product designed for your needs.",
@@ -277,4 +277,3 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
     </section>
   );
 }
-

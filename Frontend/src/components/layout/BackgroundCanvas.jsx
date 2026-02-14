@@ -11,8 +11,10 @@ export default function BackgroundCanvas() {
           backgroundSize: "40px 40px",
         }}
       />
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none translate-x-1/4 -translate-y-1/4" />
-      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-500/5 rounded-full blur-[100px] pointer-events-none -translate-x-1/4 translate-y-1/4" />
+      <div className="absolute top-[-10%] right-[-5%] w-[600px] h-[600px] bg-emerald-400/20 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-blue-400/15 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-[30%] left-[20%] w-[300px] h-[300px] bg-indigo-400/10 rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute inset-0 backdrop-blur-[1.5px] pointer-events-none" />
     </>
   );
 }

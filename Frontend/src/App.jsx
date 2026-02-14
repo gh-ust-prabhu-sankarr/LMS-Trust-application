@@ -17,15 +17,21 @@ import LoanApplication from "./pages/loans/applications/LoanApplication.jsx";
 
 export default function App() {
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[var(--fs-bg)]">
+    <div className="relative min-h-screen overflow-x-hidden app-gradient-bg">
       <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-[var(--fs-bg)]" />
-        <div className="absolute top-[-12%] left-[12%] h-[45vh] w-[38vw] rounded-full blur-[130px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-emerald) 24%, transparent)" }} />
-        <div className="absolute top-[8%] right-[10%] h-[38vh] w-[34vw] rounded-full blur-[130px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-blue) 18%, transparent)" }} />
-        <div className="absolute bottom-[-14%] left-[20%] h-[44vh] w-[34vw] rounded-full blur-[140px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-purple) 16%, transparent)" }} />
-        <div className="absolute bottom-[-18%] right-[8%] h-[48vh] w-[38vw] rounded-full blur-[150px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-orange) 14%, transparent)" }} />
-        <div className="absolute top-[38%] left-[42%] h-[34vh] w-[26vw] rounded-full blur-[120px]" style={{ backgroundColor: "color-mix(in srgb, var(--fs-pink) 10%, transparent)" }} />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[color-mix(in_srgb,var(--fs-slate)_4%,transparent)] to-transparent" />
+        <div className="absolute inset-0 app-gradient-bg" />
+        <div
+          className="absolute top-[-12%] left-[10%] h-[42vh] w-[35vw] rounded-full blur-[130px]"
+          style={{ backgroundColor: "color-mix(in srgb, var(--fs-emerald) 22%, transparent)" }}
+        />
+        <div
+          className="absolute top-[10%] right-[8%] h-[36vh] w-[32vw] rounded-full blur-[125px]"
+          style={{ backgroundColor: "color-mix(in srgb, #6ee7b7 24%, transparent)" }}
+        />
+        <div
+          className="absolute bottom-[-16%] right-[6%] h-[46vh] w-[36vw] rounded-full blur-[145px]"
+          style={{ backgroundColor: "color-mix(in srgb, #34d399 16%, transparent)" }}
+        />
       </div>
 
       <div className="relative z-10">
