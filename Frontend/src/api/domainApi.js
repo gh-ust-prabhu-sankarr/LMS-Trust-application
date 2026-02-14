@@ -1,5 +1,7 @@
 import { api } from "./axios.js";
+
 export const unwrap = (res) => res?.data?.data ?? res?.data;
+
 const shouldFallbackEndpoint = (err) => {
   const status = err?.response?.status;
   const message = String(err?.response?.data?.message || err?.message || "").toLowerCase();
@@ -25,18 +27,20 @@ export const customerApi = {
 // ---------------- KYC API ----------------
 export const kycApi = {
   // Customer actions
-  submit: (payload, panDocument, aadhaarDocument) => {      //diff typ data text ----binary
-    const formData = new FormData();   //multipart/form-data starts. 
+  submit: (payload, panDocument, aadhaarDocument) => {
+    const formData = new FormData();
     formData.append("fullName", payload.fullName ?? "");
     formData.append("dob", payload.dob ?? "");
     formData.append("panNumber", payload.panNumber ?? "");
     formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
-    formData.append("panDocument", panDocument); // it contians nam sizeee type actual data   Browser reads file as bytes
+    formData.append("panDocument", panDocument);
     formData.append("aadhaarDocument", aadhaarDocument);
+
     return api.post("/kyc/submit", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
+
   getMyKyc: () => api.get("/kyc/me"),
 
   // Officer/Admin actions
@@ -45,10 +49,10 @@ export const kycApi = {
       return await api.get("/officer/kyc", { params: { status } });
     } catch (err) {
       if (!shouldFallbackEndpoint(err)) throw err;
-      // Fallback for environments still exposing admin KYC endpoint
       return api.get("/admin/kyc", { params: { status } });
     }
   },
+
   approve: async (kycId, remarks) => {
     try {
       return await api.post(`/officer/kyc/${kycId}/approve`, { remarks });
@@ -57,6 +61,7 @@ export const kycApi = {
       return api.post(`/admin/kyc/${kycId}/verify`, { status: "APPROVED", remarks });
     }
   },
+
   reject: async (kycId, remarks) => {
     try {
       return await api.post(`/officer/kyc/${kycId}/reject`, { remarks });
@@ -89,7 +94,17 @@ export const loanApi = {
 
 // ---------------- REPAYMENT API ----------------
 export const repaymentApi = {
+  // mock/manual payment (if you still want it)
   makePayment: (payload) => api.post("/repayments", payload),
+
+  // ✅ Stripe checkout session
+  createStripeCheckoutSession: (payload) =>
+    api.post("/repayments/stripe/checkout-session", payload),
+
+  // ✅ FIXED: backend expects JSON body { sessionId }
+  confirmStripePayment: (sessionId) =>
+  api.post("/repayments/stripe/confirm", { sessionId }),
+
   getByLoan: (loanId) => api.get(`/repayments/loan/${loanId}`),
   getSchedule: (loanId) => api.get(`/repayments/schedule/${loanId}`),
   markMissed: (loanId) => api.post(`/repayments/miss/${loanId}`),
@@ -102,22 +117,23 @@ export const fileApi = {
     formData.append("file", file);
     formData.append("entityType", entityType);
     formData.append("entityId", entityId);
-    if (displayName) {
-      formData.append("displayName", displayName);
-    }
+    if (displayName) formData.append("displayName", displayName);
 
     return api.post("/files/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
+
   listByEntity: (entityType, entityId) => api.get(`/files/entity/${entityType}/${entityId}`),
   deleteFile: (fileId) => api.delete(`/files/${fileId}`),
   downloadUrl: (fileId) => `${api.defaults.baseURL}/files/download/${fileId}`,
+
   download: async (fileId, fallbackName = "document.pdf") => {
     const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
     const disposition = res?.headers?.["content-disposition"] || "";
     const match = disposition.match(/filename=\"?([^"]+)\"?/i);
     const filename = match?.[1] || fallbackName;
+
     const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
     const a = document.createElement("a");
     a.href = blobUrl;

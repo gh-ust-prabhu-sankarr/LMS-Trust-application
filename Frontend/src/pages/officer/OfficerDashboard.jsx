@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { customerApi, kycApi, loanApi, unwrap, userApi, fileApi } from "../../api/domainApi.js";
 import { 
-  ShieldCheck, Landmark, ChevronRight, ChevronLeft, Wallet, RefreshCw, 
-  ClipboardCheck, UserCheck, Banknote, AlertCircle, 
-  FileText, X, ExternalLink, Eye, ArrowRight, CheckCircle2
+  ChevronRight, ChevronLeft,
+  ClipboardCheck, UserCheck, AlertCircle, 
+  FileText, X, ExternalLink, Eye, CheckCircle2
 } from "lucide-react";
 
 // --- CONSTANTS ---
@@ -33,6 +33,8 @@ const toArray = (payload) => {
 };
 
 const ITEMS_PER_PAGE = 3;
+const KYC_STATUSES = ["PENDING", "APPROVED", "REJECTED"];
+const LOAN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "APPROVED"];
 
 const getEntryTime = (item) => {
   const keys = ["submittedAt", "createdAt", "appliedAt", "updatedAt", "createdDate", "createdOn"];
@@ -60,20 +62,24 @@ export default function OfficerDashboard() {
   const [kycByStatus, setKycByStatus] = useState({ PENDING: [], APPROVED: [], REJECTED: [] });
   const [loanByStatus, setLoanByStatus] = useState({ SUBMITTED: [], UNDER_REVIEW: [], APPROVED: [] });
   const [customerById, setCustomerById] = useState({});
-  const [officerProfile, setOfficerProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   
   // Modal States
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [selectedKyc, setSelectedKyc] = useState(null);
   const [kycPage, setKycPage] = useState(1);
   const [loanPage, setLoanPage] = useState(1);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [loanActionError, setLoanActionError] = useState("");
+  const [loanActionSuccess, setLoanActionSuccess] = useState("");
+  const [approvedAmount, setApprovedAmount] = useState("");
+  const [approvalComments, setApprovalComments] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
 
-  const KYC_STATUSES = ["PENDING", "APPROVED", "REJECTED"];
-  const LOAN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "APPROVED"];
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     setIsLoading(true);
+    setLoadError("");
     try {
       const [kycResRaw, loanResRaw, userRes] = await Promise.all([
         Promise.allSettled(KYC_STATUSES.map((s) => kycApi.getByStatus(s))),
@@ -95,7 +101,7 @@ export default function OfficerDashboard() {
 
       setKycByStatus(kycData);
       setLoanByStatus(loanData);
-      setOfficerProfile(unwrap(userRes) || userRes?.data || null);
+      unwrap(userRes);
 
       const allEntries = [...Object.values(kycData).flat(), ...Object.values(loanData).flat()];
       const uIds = [
@@ -117,13 +123,13 @@ export default function OfficerDashboard() {
         setCustomerById({});
       }
     } catch (err) {
-      console.error("Dashboard Load Error:", err);
+      setLoadError(err?.response?.data?.message || err?.message || "Failed to load dashboard data");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadInitialData(); }, []);
+  useEffect(() => { loadInitialData(); }, [loadInitialData]);
   useEffect(() => { setKycPage(1); }, [kycStatusFilter]);
 
   const kycRows = useMemo(
@@ -156,12 +162,65 @@ export default function OfficerDashboard() {
 
   const handleKycAction = async (id, action) => {
     try {
-      const remarks = `${action.toUpperCase()} processed by Admin Console.`;
+      const remarks = `${action.toUpperCase()} processed by Loan Officer Console.`;
       action === "approve" ? await kycApi.approve(id, remarks) : await kycApi.reject(id, remarks);
       setSelectedKyc(null);
       await loadInitialData(); // Refresh lists
-    } catch (err) { alert("Authorization failed"); }
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "Authorization failed");
+    }
   };
+
+  const handleOpenLoan = (loan) => {
+    setSelectedLoan(loan);
+    setLoanActionError("");
+    setLoanActionSuccess("");
+    setApprovedAmount(String(loan?.requestedAmount || ""));
+    setApprovalComments("");
+    setRejectionReason("");
+  };
+
+  const withLoanAction = async (runner) => {
+    if (!selectedLoan?.id) return;
+    setActionBusy(true);
+    setLoanActionError("");
+    setLoanActionSuccess("");
+    try {
+      await runner();
+      setLoanActionSuccess("Action completed successfully.");
+      await loadInitialData();
+      setSelectedLoan(null);
+    } catch (err) {
+      setLoanActionError(err?.response?.data?.message || err?.message || "Action failed");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const moveLoanToReview = () => withLoanAction(async () => {
+    await loanApi.moveToReview(selectedLoan.id);
+  });
+
+  const approveLoan = () => withLoanAction(async () => {
+    const amount = Number(approvedAmount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Enter a valid approved amount");
+    }
+    // Backend allows approval only from UNDER_REVIEW; auto-transition when current state is SUBMITTED.
+    if (selectedLoan.status === "SUBMITTED") {
+      await loanApi.moveToReview(selectedLoan.id);
+    }
+    await loanApi.approve(selectedLoan.id, {
+      approvedAmount: amount,
+      comments: approvalComments || "Approved by loan officer",
+    });
+  });
+
+  const rejectLoan = () => withLoanAction(async () => {
+    const reason = rejectionReason.trim();
+    if (!reason) throw new Error("Enter rejection reason");
+    await loanApi.reject(selectedLoan.id, reason);
+  });
 
   // --- UI ATOMS ---
   const SidebarButton = ({ id, label, icon: Icon }) => (
@@ -174,7 +233,7 @@ export default function OfficerDashboard() {
       }`}
     >
       <div className="flex items-center gap-4">
-        <Icon size={18} className={activeTab === id ? "text-emerald-400" : "text-slate-400 group-hover:text-emerald-600"} />
+        {Icon ? React.createElement(Icon, { size: 18, className: activeTab === id ? "text-emerald-400" : "text-slate-400 group-hover:text-emerald-600" }) : null}
         <span className="text-[10px] font-black uppercase tracking-[0.2em]">{label}</span>
       </div>
       <ChevronRight size={14} className={activeTab === id ? "opacity-100" : "opacity-0"} />
@@ -196,11 +255,16 @@ export default function OfficerDashboard() {
         </aside>
 
         <main className="lg:col-span-9">
+          {loadError && (
+            <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+              {loadError}
+            </div>
+          )}
           <AnimatePresence mode="wait">
             
             {/* KYC TAB */}
             {activeTab === "kyc" && (
-              <motion.div key="kyc" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
+              <div className="space-y-8">
                 <div className="flex gap-2 p-1.5 bg-white border border-slate-200 rounded-2xl w-fit shadow-sm">
                     {KYC_STATUSES.map(s => (
                         <button 
@@ -296,12 +360,12 @@ export default function OfficerDashboard() {
                     </div>
                   ) : null}
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* LOANS TAB */}
             {activeTab === "loans" && (
-              <motion.div key="loans" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <div>
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
                   <table className="w-full text-left">
                     <thead className="bg-slate-50 border-b border-slate-200">
@@ -315,7 +379,7 @@ export default function OfficerDashboard() {
                     <tbody className="divide-y divide-slate-100">
                       {loanRows.length > 0 ? (
                         pagedLoanRows.map(loan => (
-                          <tr key={loan.id} className="hover:bg-emerald-50/30 transition-colors group cursor-pointer" onClick={() => setSelectedLoan(loan)}>
+                          <tr key={loan.id} className="hover:bg-emerald-50/30 transition-colors group cursor-pointer" onClick={() => handleOpenLoan(loan)}>
                             <td className="p-6">
                               <p className="font-bold text-slate-900">{customerById[loan.customerId]?.fullName || "Retrieving Profile..."}</p>
                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{loan.loanProductName}</p>
@@ -379,7 +443,7 @@ export default function OfficerDashboard() {
                     </div>
                   ) : null}
                 </div>
-              </motion.div>
+              </div>
             )}
 
           </AnimatePresence>
@@ -390,7 +454,7 @@ export default function OfficerDashboard() {
       <AnimatePresence>
         {selectedKyc && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white rounded-[3rem] shadow-2xl max-w-5xl w-full h-[85vh] border border-slate-200 flex flex-col overflow-hidden">
+            <div className="bg-white rounded-[3rem] shadow-2xl max-w-5xl w-full h-[85vh] border border-slate-200 flex flex-col overflow-hidden">
                 <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div>
                         <h3 className="text-2xl font-serif text-slate-900">KYC Details</h3>
@@ -426,7 +490,7 @@ export default function OfficerDashboard() {
                         <DocumentAction label="Aadhaar Card Document" fileId={selectedKyc.aadhaarDocumentFileId} fileName="AADHAAR_DOC.pdf" />
                     </div>
                 </div>
-            </motion.div>
+            </div>
           </div>
         )}
       </AnimatePresence>
@@ -435,7 +499,7 @@ export default function OfficerDashboard() {
       <AnimatePresence>
         {selectedLoan && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white rounded-[3rem] shadow-2xl max-w-5xl w-full h-[85vh] border border-slate-200 flex flex-col overflow-hidden">
+            <div className="bg-white rounded-[3rem] shadow-2xl max-w-5xl w-full h-[85vh] border border-slate-200 flex flex-col overflow-hidden">
                 <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div>
                         <h3 className="text-2xl font-serif text-slate-900">Loan Details: {selectedLoan.loanProductName}</h3>
@@ -458,9 +522,73 @@ export default function OfficerDashboard() {
                              <p className="text-sm text-slate-700 leading-relaxed font-medium italic">"System-generated risk assessment: Based on credit index and income statements, applicant shows stable repayment capacity."</p>
                         </div>
                         
+                        {loanActionError && (
+                          <p className="text-sm font-semibold text-rose-600">{loanActionError}</p>
+                        )}
+                        {loanActionSuccess && (
+                          <p className="text-sm font-semibold text-emerald-700">{loanActionSuccess}</p>
+                        )}
+
+                        {selectedLoan.status === "SUBMITTED" && (
+                          <div className="flex flex-col gap-3">
+                            <button
+                              disabled={actionBusy}
+                              onClick={moveLoanToReview}
+                              className="w-full py-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-slate-800 hover:bg-emerald-800 transition-all disabled:opacity-60"
+                            >
+                              {actionBusy ? "Processing..." : "Move To Review"}
+                            </button>
+                          </div>
+                        )}
+
+                        {["SUBMITTED", "UNDER_REVIEW"].includes(selectedLoan.status) && (
+                          <div className="space-y-3">
+                            <input
+                              type="number"
+                              min="1"
+                              value={approvedAmount}
+                              onChange={(e) => setApprovedAmount(e.target.value)}
+                              placeholder="Approved amount"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                            />
+                            <input
+                              value={approvalComments}
+                              onChange={(e) => setApprovalComments(e.target.value)}
+                              placeholder="Approval comments (optional)"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                            />
+                            <button
+                              disabled={actionBusy}
+                              onClick={approveLoan}
+                              className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-slate-800 hover:bg-emerald-800 transition-all disabled:opacity-60"
+                            >
+                              {actionBusy ? "Processing..." : (selectedLoan.status === "SUBMITTED" ? "Move + Approve Loan" : "Approve Loan")}
+                            </button>
+
+                            <input
+                              value={rejectionReason}
+                              onChange={(e) => setRejectionReason(e.target.value)}
+                              placeholder="Rejection reason"
+                              className="w-full rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                            />
+                            <button
+                              disabled={actionBusy}
+                              onClick={rejectLoan}
+                              className="w-full py-4 bg-white text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-rose-200 hover:bg-rose-50 transition-all disabled:opacity-60"
+                            >
+                              {actionBusy ? "Processing..." : "Reject Loan"}
+                            </button>
+                          </div>
+                        )}
+
+                        {selectedLoan.status === "APPROVED" && (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700">
+                            Loan is approved. Disbursement is handled by admin.
+                          </div>
+                        )}
+
                         <div className="flex flex-col gap-3">
-                            <button className="w-full py-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-slate-800 hover:bg-emerald-800 transition-all">Approve</button>
-                            <button onClick={() => setSelectedLoan(null)} className="w-full py-5 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] hover:text-rose-600 transition-colors">Close</button>
+                          <button onClick={() => setSelectedLoan(null)} className="w-full py-5 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] hover:text-rose-600 transition-colors">Close</button>
                         </div>
                     </div>
 
@@ -470,7 +598,7 @@ export default function OfficerDashboard() {
                         <DocumentAction label="Employment Verification" placeholder />
                     </div>
                 </div>
-            </motion.div>
+            </div>
           </div>
         )}
       </AnimatePresence>
