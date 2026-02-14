@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
 import { parseApplicationFields, parseCommaSeparated, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
+import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid } from "lucide-react";
 
 const initialProductForm = {
@@ -184,6 +185,7 @@ export default function AdminDashboard() {
                 <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
                   <tr>
                     <th className="px-8 py-4">Identity</th>
+                    <th className="px-8 py-4">KYC IDs</th>
                     <th className="px-8 py-4 text-center">System Role</th>
                     <th className="px-8 py-4 text-right">Access Control</th>
                   </tr>
@@ -200,6 +202,12 @@ export default function AdminDashboard() {
                             <div className="text-sm font-bold text-slate-800">{u.username}</div>
                             <div className="text-[10px] text-slate-400">{u.email}</div>
                           </div>
+                        </div>
+                      </td>
+                      <td className="px-8 py-4">
+                        <div className="space-y-1 text-[10px] text-slate-500">
+                          <div>PAN: <span className="font-semibold text-slate-700">{maskPanNumber(u.panNumber)}</span></div>
+                          <div>Aadhaar: <span className="font-semibold text-slate-700">{maskAadhaarNumber(u.aadhaarNumber)}</span></div>
                         </div>
                       </td>
                       <td className="px-8 py-4 text-center">

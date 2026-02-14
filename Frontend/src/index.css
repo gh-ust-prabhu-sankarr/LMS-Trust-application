@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --fs-bg: #f8fafc;
+  --fs-emerald: #10b981;
+  --fs-blue: #3b82f6;
+  --fs-purple: #8b5cf6;
+  --fs-orange: #f97316;
+  --fs-pink: #ec4899;
+  --fs-slate: #334155;
+}
+
+html,
+body,
+#root {
+  background-color: var(--fs-bg);
+}
+
 /* Add this layer for the "Expensive Paper" feel */
 .bg-noise {
   position: relative;

@@ -8,7 +8,6 @@ import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.Repayment;
 import com.trumio.lms.entity.Customer;
 import com.trumio.lms.entity.User;
-import com.trumio.lms.entity.User;
 import com.trumio.lms.entity.enums.EMIStatus;
 import com.trumio.lms.entity.enums.RepaymentStatus;
 import com.trumio.lms.exception.BusinessException;
@@ -29,6 +28,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class RepaymentService {
+    private static final double DEFAULT_CUSTOMER_BANK_BALANCE = 100000.0;
+    private static final double DEFAULT_OFFICER_BANK_BALANCE = 1_000_000_000.0;
 
     private final RepaymentRepository repaymentRepository;
     private final EMIScheduleRepository emiScheduleRepository;
@@ -49,6 +50,15 @@ public class RepaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
         
         double amount = request.getAmount() == null ? 0.0 : request.getAmount();
+        if (amount <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_AMOUNT, "Repayment amount must be greater than 0");
+        }
+        if (customer.getBankBalance() == null) {
+            customer.setBankBalance(DEFAULT_CUSTOMER_BANK_BALANCE);
+        }
+        if (customer.getBankBalance() < amount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_WALLET_BALANCE, "Insufficient customer bank balance");
+        }
 
         String transactionId;
         try {
@@ -70,6 +80,20 @@ public class RepaymentService {
                 .build();
 
         Repayment saved = repaymentRepository.save(repayment);
+
+        customer.setBankBalance(customer.getBankBalance() - amount);
+        customer.setUpdatedAt(LocalDateTime.now());
+
+        if (loan.getReviewedBy() != null && !loan.getReviewedBy().isBlank()) {
+            userRepository.findById(loan.getReviewedBy()).ifPresent(officer -> {
+                if (officer.getBankBalance() == null) {
+                    officer.setBankBalance(DEFAULT_OFFICER_BANK_BALANCE);
+                }
+                officer.setBankBalance(officer.getBankBalance() + amount);
+                officer.setUpdatedAt(LocalDateTime.now());
+                userRepository.save(officer);
+            });
+        }
 
         // Update EMI schedule
         updateEMISchedule(schedule, amount);
@@ -115,9 +139,10 @@ public class RepaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
 
         Optional<EMIInstallment> firstPending = schedule.getInstallments().stream()
-                .filter(i -> i.getStatus() == EMIStatus.PENDING)
+                .filter(i -> i.getStatus() == EMIStatus.PENDING) // // Find first unpaid EMI
                 .findFirst();
         if (firstPending.isPresent()) {
+            // Mark installment as overdue
             EMIInstallment installment = firstPending.get();
             installment.setStatus(EMIStatus.OVERDUE);
             emiScheduleRepository.save(schedule);

@@ -19,7 +19,7 @@ public class EMIService {
 
     private final EMIScheduleRepository emiScheduleRepository;
 
-    public EMISchedule generateSchedule(LoanApplication loan) {
+    public EMISchedule generateSchedule(LoanApplication loan) {//amount ,intrest,tenure
         List<EMIInstallment> installments = EMICalculator.generateSchedule(
                 loan.getApprovedAmount(),
                 loan.getInterestRate(),

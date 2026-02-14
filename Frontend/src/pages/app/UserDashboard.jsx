@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
+import { customerApi, fileApi, kycApi, loanApi, productApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { useEmiSchedule } from "../../hooks/useEmiSchedule.js";
+import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
+import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 
 const money = (n) => {
   const value = Number(n);
@@ -42,6 +43,7 @@ export default function UserDashboard() {
   const [activeLoanId, setActiveLoanId] = useState("");
   const { repayments, schedule, docs, actionBusy, actionError, payInstallment, missInstallment } = useEmiSchedule(activeLoanId);
   const [myKyc, setMyKyc] = useState(null);
+  const [productById, setProductById] = useState({});
 
   // --- Form States ---
   const [editing, setEditing] = useState(false);
@@ -148,7 +150,11 @@ export default function UserDashboard() {
     setError("");
     try {
       let profileData = null;
-      const [profileRes, loansRes] = await Promise.allSettled([customerApi.getMyProfile(), loanApi.getMyLoans()]);
+      const [profileRes, loansRes, productsRes] = await Promise.allSettled([
+        customerApi.getMyProfile(),
+        loanApi.getMyLoans(),
+        productApi.getAll(),
+      ]);
       
       if (profileRes.status === "fulfilled") {
         const p = profileRes.value.data;
@@ -334,8 +340,8 @@ export default function UserDashboard() {
       onClick={() => setActiveTab(id)}
       className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
         activeTab === id
-          ? "bg-emerald-600 text-white shadow-md ring-2 ring-emerald-100"
-          : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+          ? "bg-emerald-600 text-white shadow-lg shadow-emerald-700/20 ring-2 ring-emerald-100"
+          : "bg-white text-slate-500 border border-slate-200 hover:bg-emerald-50/60 hover:text-emerald-800"
       }`}
     >
       {label}
@@ -344,9 +350,22 @@ export default function UserDashboard() {
 
   return (
     <PortalShell title="Customer Portal" subtitle="Unified workspace for your finances.">
+      <section className="mb-8 rounded-[2rem] border border-emerald-200/70 bg-gradient-to-r from-emerald-50 via-white to-teal-50 p-6 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">Portfolio Snapshot</p>
+            <h2 className="mt-2 text-2xl font-serif text-slate-900">Welcome back, {user?.username || profile?.fullName || "Customer"}</h2>
+            <p className="mt-1 text-sm text-slate-500">Track profile, KYC, active loans, and repayments from one place.</p>
+          </div>
+          <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Available Balance</p>
+            <p className="mt-1 text-2xl font-black text-emerald-700">{money(profile?.bankBalance)}</p>
+          </div>
+        </div>
+      </section>
       
       {/* --- TAB NAVIGATION --- */}
-      <div className="mb-8 flex flex-wrap gap-2 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50/70 to-white p-3">
+      <div className="mb-8 flex flex-wrap gap-2 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-100/50 to-white p-3 shadow-sm">
         <TabButton id="profile" label="Details" />
         <TabButton id="kyc" label="KYC Verification" />
         <TabButton id="loans" label="My Loans" />
@@ -358,7 +377,7 @@ export default function UserDashboard() {
       {/* --- SECTION 1: PROFILE --- */}
       {activeTab === "profile" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
-          <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-sm">
+          <div className="lg:col-span-2 rounded-[2rem] border border-slate-200/80 bg-white/95 p-6 md:p-8 shadow-[0_25px_60px_-25px_rgba(2,132,199,0.25)]">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-slate-900">Personal Information</h2>
               <button onClick={() => (editing ? setEditing(false) : setEditing(true))} className="text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors">
@@ -370,7 +389,8 @@ export default function UserDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Info label="Full Name" value={profile?.fullName} />
                 <Info label="Phone" value={profile?.phone} />
-                <Info label="PAN" value={profile?.panNumber} />
+                <Info label="PAN" value={maskPanNumber(profile?.panNumber)} />
+                <Info label="Bank Balance" value={money(profile?.bankBalance)} />
                 <Info label="Income" value={money(profile?.monthlyIncome)} />
                 <Info label="Employment" value={profile?.employmentType} />
                 <Info label="Credit Score" value={profile?.creditScore} />
@@ -409,6 +429,7 @@ export default function UserDashboard() {
             )}
           </div>
           <div className="space-y-4">
+             <StatCard label="Bank Balance" value={money(profile?.bankBalance)} />
              <StatCard label="KYC Status" value={kycStatusMeta.label} valueClassName="text-xl" />
              <StatCard label="Credit Score" value={profile?.creditScore ?? "-"} />
           </div>
@@ -417,7 +438,7 @@ export default function UserDashboard() {
 
       {/* --- SECTION 2: KYC --- */}
       {activeTab === "kyc" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm animate-in fade-in duration-500">
+        <div className="rounded-[2rem] border border-slate-200 bg-white/95 p-6 shadow-[0_25px_60px_-25px_rgba(16,185,129,0.2)] animate-in fade-in duration-500">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-slate-900">Verification Status</h2>
             <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${kycStatusMeta.cls}`}>{kycStatusMeta.label}</span>
@@ -427,7 +448,8 @@ export default function UserDashboard() {
           {myKyc && !kycEditing ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Info label="KYC Holder" value={myKyc.fullName} />
-              <Info label="PAN" value={myKyc.panNumber} />
+              <Info label="PAN" value={maskPanNumber(myKyc.panNumber)} />
+              <Info label="Aadhaar" value={maskAadhaarNumber(myKyc.aadhaarNumber)} />
               <Info label="Submission Attempts" value={`${kycSubmissionCount}/2`} />
               <div className="md:col-span-2 p-4 bg-slate-50 rounded-xl flex gap-4">
                 {myKyc.panDocumentFileId && <button onClick={() => handleFileDownload(myKyc.panDocumentFileId, "PAN.pdf")} className="text-xs font-bold text-emerald-700 underline">View PAN PDF</button>}
@@ -488,7 +510,7 @@ export default function UserDashboard() {
             <StatCard label="Active" value={stats.active} />
             <StatCard label="Closed" value={stats.closed} />
           </div>
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+          <div className="bg-white rounded-[2rem] border border-slate-200 overflow-hidden shadow-[0_20px_50px_-25px_rgba(15,23,42,0.25)]">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-500">
                 <tr><th className="p-4">Loan Type</th><th className="p-4">Amount</th><th className="p-4">Status</th><th className="p-4">Action</th></tr>
@@ -512,14 +534,14 @@ export default function UserDashboard() {
       {activeTab === "repayments" && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in duration-500">
           <div className="xl:col-span-1 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-[0_18px_45px_-30px_rgba(2,132,199,0.35)]">
                 <h3 className="text-xs font-black uppercase mb-4">Select Loan</h3>
                 <select value={activeLoanId} onChange={(e) => setActiveLoanId(e.target.value)} className="w-full rounded-xl border-slate-300 text-sm">
                   <option value="">Choose a loan...</option>
                   {myLoans.map(l => <option key={l.id} value={l.id}>{l.loanProductName || 'Unknown Loan'} ({effectiveStatusOf(l)})</option>)}
                 </select>
             </div>
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.3)]">
                 <h3 className="text-xs font-black uppercase mb-4">Documents</h3>
                 {docs.length === 0 ? <p className="text-xs text-slate-400">No documents found.</p> : docs.map(d => (
                   <div key={d.id} className="flex justify-between items-center text-xs py-2 border-b last:border-0">
@@ -531,7 +553,7 @@ export default function UserDashboard() {
           </div>
 
           <div className="xl:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-[0_18px_45px_-30px_rgba(16,185,129,0.35)]">
               <h3 className="text-xs font-black uppercase mb-4">EMI Schedule</h3>
               {actionError && <div className="mb-4 text-sm text-slate-700">{actionError}</div>}
               {!schedule ? <p className="text-sm text-slate-400">Select an active loan to see the schedule.</p> : (() => {

@@ -27,6 +27,9 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    private static final double DEFAULT_CUSTOMER_BANK_BALANCE = 100000.0;
+    private static final double DEFAULT_OFFICER_BANK_BALANCE = 1_000_000_000.0;
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
@@ -63,6 +66,7 @@ public class AuthService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.CUSTOMER)
                 .active(true)
+                .bankBalance(DEFAULT_CUSTOMER_BANK_BALANCE)
                 .kycStatus(null)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
@@ -77,6 +81,11 @@ public class AuthService {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (user.getBankBalance() == null) {
+            user.setBankBalance(user.getRole() == Role.CUSTOMER ? DEFAULT_CUSTOMER_BANK_BALANCE : DEFAULT_OFFICER_BANK_BALANCE);
+            user.setUpdatedAt(LocalDateTime.now());
+            user = userRepository.save(user);
+        }
 
         return UserProfileResponse.builder()
                 .id(user.getId())
@@ -85,6 +94,7 @@ public class AuthService {
                 .role(user.getRole())
                 .kycStatus(user.getKycStatus())
                 .active(user.getActive())
+                .bankBalance(user.getBankBalance())
                 .build();
     }
 }

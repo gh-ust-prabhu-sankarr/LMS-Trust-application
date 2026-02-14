@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, ChevronDown, FileText, ShieldCheck, Target } from "lucide-react";
 import Navbar from "../../components/navbar/Navbar.jsx";
+import BackgroundCanvas from "../../components/layout/BackgroundCanvas.jsx";
 import { customerApi, loanApi, productApi, unwrap } from "../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -86,6 +87,9 @@ const computeEmi = (amount, annualRatePercent, tenureYears) => {
 };
 
 export default function LoanDetailsEMI() {
+  const MotionDiv = motion.div;
+  const MotionCircle = motion.circle;
+
   const { slug = "" } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
@@ -97,6 +101,7 @@ export default function LoanDetailsEMI() {
   const [rate, setRate] = useState(0);
   const [tenureYears, setTenureYears] = useState(1);
   const [myLoans, setMyLoans] = useState([]);
+  const [modal, setModal] = useState({ open: false, title: "Notice", message: "", onClose: null });
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -156,6 +161,16 @@ export default function LoanDetailsEMI() {
     calcRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const showModal = (message, title = "Notice", onClose = null) => {
+    setModal({ open: true, title, message, onClose });
+  };
+
+  const closeModal = () => {
+    const callback = modal.onClose;
+    setModal({ open: false, title: "Notice", message: "", onClose: null });
+    if (typeof callback === "function") callback();
+  };
+
   // Check if user has already applied for this loan type
   const hasAlreadyApplied = useMemo(() => {
     return myLoans.some(loan => loan.loanProductId === activeLoan?.id);
@@ -168,7 +183,7 @@ export default function LoanDetailsEMI() {
     }
 
     if (hasAlreadyApplied) {
-      alert("You have already applied for this loan type. Only one application per loan type is allowed.");
+      showModal("You have already applied for this loan type. Only one application per loan type is allowed.");
       return;
     }
 
@@ -177,13 +192,15 @@ export default function LoanDetailsEMI() {
       const profile = unwrap(profileRes) || profileRes?.data;
       const kycStatus = String(profile?.kycStatus || "").toUpperCase();
       if (kycStatus !== "APPROVED" && kycStatus !== "VERIFIED") {
-        alert("KYC verification is required before loan application.");
-        navigate("/app");
+        showModal("KYC verification is required before loan application.", "KYC Required", () => navigate("/app"));
         return;
       }
     } catch {
-      alert("Please complete profile and KYC verification before loan application.");
-      navigate("/app");
+      showModal(
+        "Please complete profile and KYC verification before loan application.",
+        "KYC Required",
+        () => navigate("/app")
+      );
       return;
     }
 
@@ -216,14 +233,7 @@ export default function LoanDetailsEMI() {
   return (
     <div className="min-h-screen bg-slate-50 relative overflow-x-hidden text-slate-900">
       <Navbar />
-      <div
-        className="absolute inset-0 z-0 pointer-events-none opacity-[0.35]"
-        style={{
-          backgroundImage:
-            "linear-gradient(#cbd5e1 1px, transparent 1px), linear-gradient(90deg, #cbd5e1 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
-      />
+      <BackgroundCanvas />
 
       <div className="relative z-10 max-w-7xl mx-auto px-6 pt-24">
         <div className="pt-8">
@@ -237,7 +247,7 @@ export default function LoanDetailsEMI() {
 
         <section className="pt-16 pb-14 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
-            <motion.div
+            <MotionDiv
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border ${theme.border} shadow-sm`}
@@ -246,7 +256,7 @@ export default function LoanDetailsEMI() {
               <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">
                 {activeLoan.badgeText}
               </span>
-            </motion.div>
+            </MotionDiv>
 
             <h1 className="text-5xl md:text-6xl font-serif font-bold text-slate-900 leading-[1.1] tracking-tight">
               {activeLoan.heroTitle}
@@ -261,12 +271,12 @@ export default function LoanDetailsEMI() {
             </button>
           </div>
 
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative">
+          <MotionDiv initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative">
             <div className="relative z-10 w-full aspect-[4/3] rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-white">
               <img src={activeLoan.imageUrl} alt={activeLoan.name} className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900/35 to-transparent" />
             </div>
-          </motion.div>
+          </MotionDiv>
         </section>
 
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-16">
@@ -329,7 +339,6 @@ export default function LoanDetailsEMI() {
                     step: 50000,
                     unit: "INR",
                   },
-                  { label: "Interest Rate", value: rate, set: setRate, min: 4, max: 36, step: 0.05, unit: "%" },
                   {
                     label: "Loan Tenure",
                     value: tenureYears,
@@ -358,13 +367,23 @@ export default function LoanDetailsEMI() {
                     />
                   </div>
                 ))}
+
+                <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      Estimated Interest Rate
+                    </span>
+                    <span className={`text-sm font-black ${theme.text}`}>{rate}% p.a.</span>
+                  </div>
+
+                </div>
               </div>
 
               <div className={`flex flex-col items-center bg-white rounded-[2.5rem] p-8 border ${theme.border} shadow-[0_20px_50px_rgba(0,0,0,0.04)]`}>
                 <div className="relative w-32 h-32 mb-6">
                   <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                     <circle cx="50" cy="50" r="35" stroke="#F1F5F9" strokeWidth="10" fill="transparent" />
-                    <motion.circle
+                    <MotionCircle
                       cx="50"
                       cy="50"
                       r="35"
@@ -412,6 +431,24 @@ export default function LoanDetailsEMI() {
           </div>
         </section>
       </div>
+
+      {modal.open ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">{modal.title}</h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">{modal.message}</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

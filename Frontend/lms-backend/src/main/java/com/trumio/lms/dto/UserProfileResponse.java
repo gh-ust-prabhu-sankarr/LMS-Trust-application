@@ -18,5 +18,6 @@ public class UserProfileResponse {
     private Role role;
     private KYCStatus kycStatus;
     private Boolean active;
+    private Double bankBalance;
 }
 
