@@ -49,6 +49,7 @@ export function useEmiSchedule(activeLoanId) {
 
   // Old mock/manual pay (optional to keep)
  // ✅ Stripe PAY (make this the default payInstallment)
+// ✅ Stripe PAY (make this the default payInstallment)
 const payInstallment = useCallback(
   async (installment) => {
     if (!activeLoanId || !installment) return false;
@@ -68,7 +69,8 @@ const payInstallment = useCallback(
       }
 
       const successUrl = `${window.location.origin}/pay/success?session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${window.location.origin}/pay/cancel`;
+      const cancelUrl  = `${window.location.origin}/pay/cancel`;
+
 
       const res = await repaymentApi.createStripeCheckoutSession({
         loanApplicationId: activeLoanId,
@@ -94,6 +96,7 @@ const payInstallment = useCallback(
   },
   [activeLoanId]
 );
+
 
 
   // ✅ Stripe Checkout redirect (Opt A)
