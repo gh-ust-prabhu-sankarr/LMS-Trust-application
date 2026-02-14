@@ -26,7 +26,12 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async ({ identifier, password }) => {
-    const res = await authApi.login({ username: identifier, password });
+    const normalizedIdentifier = identifier?.trim();
+    const res = await authApi.login({
+      username: normalizedIdentifier,
+      email: normalizedIdentifier,
+      password,
+    });
     const t = res?.data?.data?.token || res?.data?.token || res?.data?.access_token;
     if (!t) throw new Error("Token missing in response");
     setToken(t);
