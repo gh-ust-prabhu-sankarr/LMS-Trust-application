@@ -3,8 +3,10 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
 export default function AuthGate() {
-  const { isAuthenticated, role, user } = useAuth();
+  const { isAuthenticated, role, user, authLoading } = useAuth();
   const effectiveRole = role || user?.role || null;
+
+  if (authLoading) return null;
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!effectiveRole) return <Navigate to="/" replace />;

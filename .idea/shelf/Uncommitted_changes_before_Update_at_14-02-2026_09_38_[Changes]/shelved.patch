@@ -1,0 +1,28 @@
+Index: Frontend/src/hooks/useEmiSchedule.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import { useCallback, useEffect, useMemo, useState } from \"react\";\r\nimport { fileApi, repaymentApi } from \"../api/domainApi.js\";\r\n//custome hook\r\nexport function useEmiSchedule(activeLoanId) {\r\n  const [repayments, setRepayments] = useState([]);\r\n  const [schedule, setSchedule] = useState(null);\r\n  const [docs, setDocs] = useState([]);\r\n  const [loading, setLoading] = useState(false);\r\n  const [error, setError] = useState(\"\");\r\n  const [actionBusy, setActionBusy] = useState(false);\r\n  const [actionError, setActionError] = useState(\"\");\r\n\r\n  const reset = useCallback(() => {\r\n    setRepayments([]);\r\n    setSchedule(null);\r\n    setDocs([]);\r\n    setError(\"\");\r\n    setActionError(\"\");\r\n  }, []);\r\n\r\n  const load = useCallback(async () => {\r\n    if (!activeLoanId) {\r\n      reset();\r\n      return;\r\n    }\r\n    setLoading(true);\r\n    setError(\"\");\r\n    try {\r\n      const [repRes, schRes, fileRes] = await Promise.allSettled([\r\n        repaymentApi.getByLoan(activeLoanId),\r\n        repaymentApi.getSchedule(activeLoanId),\r\n        fileApi.listByEntity(\"LOAN_APPLICATION\", activeLoanId),\r\n      ]);\r\n      if (repRes.status === \"fulfilled\") setRepayments(repRes.value.data || []);\r\n      if (schRes.status === \"fulfilled\") setSchedule(schRes.value.data || null);\r\n      if (fileRes.status === \"fulfilled\") setDocs(fileRes.value.data || []);\r\n    } catch (e) {\r\n      setError(e?.response?.data?.message || e?.message || \"Failed to load schedule\");\r\n    } finally {\r\n      setLoading(false);\r\n    }\r\n  }, [activeLoanId, reset]);\r\n\r\n  useEffect(() => {\r\n    load();\r\n  }, [load]);\r\n\r\n  const payInstallment = useCallback(async (installment) => {\r\n    if (!activeLoanId || !installment || installment.status === \"PAID\") return false;\r\n    setActionBusy(true);\r\n    setActionError(\"\");\r\n    try {\r\n      await repaymentApi.makePayment({\r\n        loanApplicationId: activeLoanId,\r\n        amount: Number(installment.totalAmount || 0),\r\n      });\r\n      await load();\r\n      return true;\r\n    } catch (e) {\r\n      setActionError(e?.response?.data?.message || e?.message || \"Payment failed\");\r\n      return false;\r\n    } finally {\r\n      setActionBusy(false);\r\n    }\r\n  }, [activeLoanId, load]);\r\n\r\n  const missInstallment = useCallback(async () => {\r\n    if (!activeLoanId) return false;\r\n    setActionBusy(true);\r\n    setActionError(\"\");\r\n    try {\r\n      await repaymentApi.markMissed(activeLoanId);\r\n      await load();\r\n      return true;\r\n    } catch (e) {\r\n      setActionError(e?.response?.data?.message || e?.message || \"Miss action failed\");\r\n      return false;\r\n    } finally {\r\n      setActionBusy(false);\r\n    }\r\n  }, [activeLoanId, load]);\r\n\r\n  const installments = useMemo(() => schedule?.installments || [], [schedule]);\r\n\r\n  return {\r\n    repayments,\r\n    schedule,\r\n    docs,\r\n    installments,\r\n    loading,\r\n    error,\r\n    actionBusy,\r\n    actionError,\r\n    load,\r\n    payInstallment,\r\n    missInstallment,\r\n  };\r\n}\r\n
+===================================================================
+diff --git a/Frontend/src/hooks/useEmiSchedule.js b/Frontend/src/hooks/useEmiSchedule.js
+--- a/Frontend/src/hooks/useEmiSchedule.js	(revision d3f462bb67bce5ca516e7b88e82e4d0a841558a7)
++++ b/Frontend/src/hooks/useEmiSchedule.js	(date 1770975096083)
+@@ -50,11 +50,17 @@
+     setActionBusy(true);
+     setActionError("");
+     try {
+-      await repaymentApi.makePayment({
++      const successUrl = `${window.location.origin}/app?payment=success`;
++      const cancelUrl = `${window.location.origin}/app?payment=cancelled`;
++      const res = await repaymentApi.createStripeCheckoutSession({
+         loanApplicationId: activeLoanId,
+         amount: Number(installment.totalAmount || 0),
++        successUrl,
++        cancelUrl,
+       });
+-      await load();
++      const checkoutUrl = res?.data?.url || res?.data?.data?.url;
++      if (!checkoutUrl) throw new Error("Failed to initialize Stripe checkout");
++      window.location.assign(checkoutUrl);
+       return true;
+     } catch (e) {
+       setActionError(e?.response?.data?.message || e?.message || "Payment failed");
