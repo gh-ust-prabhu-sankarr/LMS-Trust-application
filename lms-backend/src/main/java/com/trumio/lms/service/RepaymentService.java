@@ -8,7 +8,6 @@ import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.Repayment;
 import com.trumio.lms.entity.Customer;
 import com.trumio.lms.entity.User;
-import com.trumio.lms.entity.User;
 import com.trumio.lms.entity.enums.EMIStatus;
 import com.trumio.lms.entity.enums.RepaymentStatus;
 import com.trumio.lms.exception.BusinessException;
@@ -22,6 +21,7 @@ import com.trumio.lms.service.mock.PaymentGatewayService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.List;
@@ -71,8 +71,8 @@ public class RepaymentService {
 
         Repayment saved = repaymentRepository.save(repayment);
 
-        // Update EMI schedule
-        updateEMISchedule(schedule, amount);
+        // Update EMI schedule; supports early bulk prepayment with interest/EMI recast.
+        updateEMISchedule(schedule, loan, amount);
         adjustCreditScore(customer, amount > 0 ? 5 : 0);
         customerRepository.save(customer);
 
@@ -82,28 +82,118 @@ public class RepaymentService {
         return ApiResponse.success("Payment processed successfully", saved);
     }
 
-    private void updateEMISchedule(EMISchedule schedule, Double amount) {
-        double remainingAmount = amount;
+    private void updateEMISchedule(EMISchedule schedule, LoanApplication loan, Double amount) {
+        double remainingAmount = amount == null ? 0.0 : amount;
+        LocalDate paymentDate = LocalDate.now();
+        boolean paidFutureInstallment = false;
 
         for (EMIInstallment installment : schedule.getInstallments()) {
             if (remainingAmount <= 0) break;
             if (installment.getStatus() == EMIStatus.PAID) continue;
 
-            double pending = installment.getTotalAmount() - installment.getPaidAmount();
+            double paidSoFar = nvl(installment.getPaidAmount());
+            double pending = round2(nvl(installment.getTotalAmount()) - paidSoFar);
+            if (pending <= 0) {
+                installment.setPaidAmount(nvl(installment.getTotalAmount()));
+                installment.setStatus(EMIStatus.PAID);
+                installment.setPaidDate(paymentDate);
+                continue;
+            }
 
             if (remainingAmount >= pending) {
                 installment.setPaidAmount(installment.getTotalAmount());
                 installment.setStatus(EMIStatus.PAID);
-                installment.setPaidDate(java.time.LocalDate.now());
+                installment.setPaidDate(paymentDate);
                 remainingAmount -= pending;
+                if (installment.getDueDate() != null && installment.getDueDate().isAfter(paymentDate)) {
+                    paidFutureInstallment = true;
+                }
             } else {
-                installment.setPaidAmount(installment.getPaidAmount() + remainingAmount);
+                installment.setPaidAmount(round2(paidSoFar + remainingAmount));
                 installment.setStatus(EMIStatus.PARTIAL);
                 remainingAmount = 0;
             }
         }
 
+        // Recast future installments only for clean advance-payment cases (no partials pending).
+        boolean hasPendingPartial = schedule.getInstallments().stream()
+                .anyMatch(i -> i.getStatus() != EMIStatus.PAID && nvl(i.getPaidAmount()) > 0.0);
+        if (paidFutureInstallment && !hasPendingPartial) {
+            recastRemainingSchedule(schedule, loan, paymentDate);
+        }
+
+        schedule.setTotalInterest(round2(schedule.getInstallments().stream()
+                .mapToDouble(i -> nvl(i.getInterestAmount()))
+                .sum()));
         emiScheduleRepository.save(schedule);
+        loanApplicationRepository.save(loan);
+    }
+
+    private void recastRemainingSchedule(EMISchedule schedule, LoanApplication loan, LocalDate today) {
+        List<EMIInstallment> remaining = schedule.getInstallments().stream()
+                .filter(i -> i.getStatus() != EMIStatus.PAID)
+                .toList();
+        if (remaining.isEmpty()) {
+            loan.setEmi(0.0);
+            return;
+        }
+
+        double outstandingPrincipal = round2(remaining.stream()
+                .mapToDouble(this::pendingPrincipal)
+                .sum());
+        if (outstandingPrincipal <= 0) {
+            loan.setEmi(0.0);
+            return;
+        }
+
+        int remainingMonths = remaining.size();
+        double annualRate = nvl(loan.getInterestRate());
+        double monthlyRate = annualRate / (12 * 100.0);
+        double emi = monthlyRate == 0.0
+                ? round2(outstandingPrincipal / remainingMonths)
+                : com.trumio.lms.util.EMICalculator.calculateEMI(outstandingPrincipal, annualRate, remainingMonths);
+
+        double principalLeft = outstandingPrincipal;
+        for (int i = 0; i < remainingMonths; i++) {
+            EMIInstallment installment = remaining.get(i);
+            double interestAmount = monthlyRate == 0.0 ? 0.0 : principalLeft * monthlyRate;
+            double principalAmount = emi - interestAmount;
+            if (i == remainingMonths - 1 || principalAmount > principalLeft) {
+                principalAmount = principalLeft;
+                emi = principalAmount + interestAmount;
+            }
+
+            installment.setPrincipalAmount(round2(principalAmount));
+            installment.setInterestAmount(round2(interestAmount));
+            installment.setTotalAmount(round2(emi));
+            installment.setPaidAmount(0.0);
+            installment.setPaidDate(null);
+            installment.setStatus(
+                    installment.getDueDate() != null && installment.getDueDate().isBefore(today)
+                            ? EMIStatus.OVERDUE
+                            : EMIStatus.PENDING
+            );
+
+            principalLeft = round2(principalLeft - principalAmount);
+        }
+
+        loan.setEmi(round2(remaining.get(0).getTotalAmount()));
+    }
+
+    private double pendingPrincipal(EMIInstallment installment) {
+        double principal = nvl(installment.getPrincipalAmount());
+        double interest = nvl(installment.getInterestAmount());
+        double paid = nvl(installment.getPaidAmount());
+        double principalPaid = Math.max(0.0, Math.min(principal, paid - interest));
+        return round2(principal - principalPaid);
+    }
+
+    private double nvl(Double value) {
+        return value == null ? 0.0 : value;
+    }
+
+    private double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     public ApiResponse<EMISchedule> markMissed(String loanId, String userId) {

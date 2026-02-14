@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 import { authApi } from "../api/authApi.js";
 import { getToken, removeToken, setToken } from "../utils/token.js";
 import { decodeToken, getRoleFromToken } from "../utils/jwt.js";
@@ -6,24 +6,21 @@ import { decodeToken, getRoleFromToken } from "../utils/jwt.js";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setTokenState] = useState(getToken());
-  const [role, setRole] = useState(getRoleFromToken(getToken()));
-  const [user, setUser] = useState(null);
+  const initialToken = getToken();
+  const initialRole = getRoleFromToken(initialToken);
+  const initialPayload = initialToken ? decodeToken(initialToken) : null;
 
-  useEffect(() => {
-    const t = getToken();
-    const restoredRole = getRoleFromToken(t);
-    setTokenState(t);
-    setRole(restoredRole);
-    if (t) {
-      const payload = decodeToken(t);
-      setUser((prev) => prev || {
-        username: payload?.sub || payload?.username || "User",
-        email: payload?.email || null,
-        role: restoredRole || null,
-      });
-    }
-  }, []);
+  const [token, setTokenState] = useState(initialToken);
+  const [role, setRole] = useState(initialRole);
+  const [user, setUser] = useState(
+    initialToken
+      ? {
+          username: initialPayload?.sub || initialPayload?.username || "User",
+          email: initialPayload?.email || null,
+          role: initialRole || null,
+        }
+      : null
+  );
 
   const login = async ({ identifier, password }) => {
     const normalizedIdentifier = identifier?.trim();
