@@ -147,7 +147,7 @@ export default function LoanApplication() {
   };
 
   return (
-    <section className="relative min-h-screen w-full bg-slate-50 flex items-center justify-center p-6 pt-28 overflow-hidden">
+    <section className="relative min-h-screen w-full app-gradient-bg flex items-center justify-center p-6 pt-28 overflow-hidden">
       <Navbar />
       <BackgroundCanvas />
 

@@ -224,14 +224,14 @@ export default function LoanDetailsEMI() {
 
   if (!activeLoan && !loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center app-gradient-bg">
         <p className="text-sm text-slate-600">Loan not found.</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 relative overflow-x-hidden text-slate-900">
+    <div className="min-h-screen app-gradient-bg relative overflow-x-hidden text-slate-900">
       <Navbar />
       <BackgroundCanvas />
 

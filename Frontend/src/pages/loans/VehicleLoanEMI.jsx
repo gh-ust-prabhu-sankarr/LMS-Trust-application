@@ -49,7 +49,7 @@ const VehicleLoanEMI = () => {
   };
  
   return (
-    <div className="min-h-screen bg-slate-50 relative overflow-x-hidden text-slate-900 font-sans">
+    <div className="min-h-screen app-gradient-bg relative overflow-x-hidden text-slate-900 font-sans">
       <Navbar />
      
       {/* GRID BACKGROUND */}

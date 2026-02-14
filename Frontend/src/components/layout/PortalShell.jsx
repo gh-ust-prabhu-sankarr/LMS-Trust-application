@@ -3,7 +3,7 @@ import BackgroundCanvas from "./BackgroundCanvas.jsx";
 //for dashboard and admin panel and officer panel
 export default function PortalShell({ title, subtitle, children }) {
   return (
-    <div className="relative min-h-screen bg-slate-50 overflow-hidden">
+    <div className="relative min-h-screen app-gradient-bg overflow-hidden">
       <Navbar />
       <BackgroundCanvas />
       <main className="relative z-10 mx-auto max-w-7xl px-6 lg:px-16 py-10 pt-28">

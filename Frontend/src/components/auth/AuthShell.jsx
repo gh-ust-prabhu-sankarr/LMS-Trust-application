@@ -17,7 +17,7 @@ export default function AuthShell({
   }, []);
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50">
+    <div className="h-screen overflow-hidden app-gradient-bg">
       <Navbar />
       <div className="grid h-[calc(100vh-80px)] grid-cols-1 lg:grid-cols-2 pt-20">
         <div className="relative hidden lg:flex items-center justify-center px-10 py-16">
