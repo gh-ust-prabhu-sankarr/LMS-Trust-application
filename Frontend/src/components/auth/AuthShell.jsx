@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import Navbar from "../navbar/Navbar";
 export default function AuthShell({
   title = "Login to LoanBank",
@@ -8,11 +8,18 @@ export default function AuthShell({
   cardMaxWidth = "max-w-md",
   compact = false,
 }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
-  
-    <div className="min-h-screen bg-slate-50">
-      <Navbar></Navbar>
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
+    <div className="h-screen overflow-hidden app-gradient-bg">
+      <Navbar />
+      <div className="grid h-[calc(100vh-80px)] grid-cols-1 lg:grid-cols-2 pt-20">
         <div className="relative hidden lg:flex items-center justify-center px-10 py-16">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 via-white to-orange-50" />
           <div className="absolute -top-40 -left-40 h-[500px] w-[500px] rounded-full bg-emerald-200/30 blur-[120px]" />
@@ -67,7 +74,7 @@ export default function AuthShell({
           </div>
         </div>
 
-        <div className="flex items-center justify-center px-6 py-12 lg:px-10 lg:py-16">
+        <div className="flex h-full items-center justify-center overflow-hidden px-6 py-10 lg:px-10 lg:py-16">
           <div className={`w-full ${cardMaxWidth}`}>
             <div className="mb-6 flex items-center justify-between">
               <div className="text-lg font-black tracking-tight text-slate-900"></div>

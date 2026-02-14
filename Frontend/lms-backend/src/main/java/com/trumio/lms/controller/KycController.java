@@ -18,7 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/kyc")
-@RequiredArgsConstructor
+@RequiredArgsConstructor  //automatically creates constructor
 public class KycController {
 
     private final KycService kycService;
@@ -32,9 +32,9 @@ public class KycController {
      *   "aadhaarNumber": "123412341234"
      * }
      */
-    @PostMapping(value = "/submit", consumes = {"multipart/form-data"})
+    @PostMapping(value = "/submit", consumes = {"multipart/form-data"})//SENDING text and file
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<ApiResponse<KycResponse>> submitKyc(
+    public ResponseEntity<ApiResponse<KycResponse>> submitKyc( //It reads text fields from multipart form.(modelattribute)
             @Valid @ModelAttribute KycRequest request, //read tetxt filed...name...  Read text fields from multipart request
             @RequestParam("panDocument") MultipartFile panDocument, //extract and  file size and file type conetnt
             @RequestParam("aadhaarDocument") MultipartFile aadhaarDocument) {

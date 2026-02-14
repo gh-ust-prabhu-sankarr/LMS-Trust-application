@@ -35,6 +35,8 @@ public class User {
 
     private Boolean active;
 
+    private Double bankBalance;
+
     private KYCStatus kycStatus;
 
     private LocalDateTime createdAt;

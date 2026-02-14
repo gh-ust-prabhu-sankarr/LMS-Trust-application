@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fileApi, repaymentApi } from "../api/domainApi.js";
 //custome hook
-export function useEmiSchedule(activeLoanId) {
-  const [repayments, setRepayments] = useState([]);
+export function useEmiSchedule(activeLoanId) { //when loan chnaged ..it loads
+  const [repayments, setRepayments] = useState([]); //Stores repayment history.
   const [schedule, setSchedule] = useState(null);
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [actionBusy, setActionBusy] = useState(false);
-  const [actionError, setActionError] = useState("");
+  const [actionBusy, setActionBusy] = useState(false); //This prevents double clicking Pay or Miss button will disapbled..  
+  const [actionError, setActionError] = useState("");//Stores Pay/Miss errors.
 
-  const reset = useCallback(() => {
+  const reset = useCallback(() => { //functions inside React get recreated every render.
     setRepayments([]);
     setSchedule(null);
-    setDocs([]);
+    setDocs([]);                           //If no loan selected,we must clear old data
     setError("");
     setActionError("");
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async () => { //loads all EMI-related data.
     if (!activeLoanId) {
       reset();
       return;
@@ -26,7 +26,7 @@ export function useEmiSchedule(activeLoanId) {
     setLoading(true);
     setError("");
     try {
-      const [repRes, schRes, fileRes] = await Promise.allSettled([
+      const [repRes, schRes, fileRes] = await Promise.allSettled([ //calss all api same for doc wmi sche repay
         repaymentApi.getByLoan(activeLoanId),
         repaymentApi.getSchedule(activeLoanId),
         fileApi.listByEntity("LOAN_APPLICATION", activeLoanId),
@@ -45,14 +45,14 @@ export function useEmiSchedule(activeLoanId) {
     load();
   }, [load]);
 
-  const payInstallment = useCallback(async (installment) => {
+  const payInstallment = useCallback(async (installment) => {  //This handles Pay button.
     if (!activeLoanId || !installment || installment.status === "PAID") return false;
     setActionBusy(true);
     setActionError("");
     try {
       await repaymentApi.makePayment({
         loanApplicationId: activeLoanId,
-        amount: Number(installment.totalAmount || 0),
+        amount: Number(installment.totalAmount || 0), //ensure numeric type.
       });
       await load();
       return true;
@@ -61,6 +61,7 @@ export function useEmiSchedule(activeLoanId) {
       return false;
     } finally {
       setActionBusy(false);
+      //ko
     }
   }, [activeLoanId, load]);
 
@@ -80,7 +81,7 @@ export function useEmiSchedule(activeLoanId) {
     }
   }, [activeLoanId, load]);
 
-  const installments = useMemo(() => schedule?.installments || [], [schedule]);
+  const installments = useMemo(() => schedule?.installments || [], [schedule]);  //only recalculates when schedule changes.
 
   return {
     repayments,

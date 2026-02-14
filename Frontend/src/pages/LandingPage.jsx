@@ -6,7 +6,7 @@ import LoansSection from "../components/loans/LoansSection";
 import FeaturesSection from "../components/features/FeaturesSection";
 import Footer from "../components/footer/Footer";
 import { useAuth } from "../context/AuthContext.jsx";
-
+  
 const LandingPage = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
@@ -19,7 +19,7 @@ const LandingPage = () => {
   };
 
   return (
-    <>
+    <div className="relative min-h-screen app-gradient-bg overflow-hidden">
       <Navbar />
       <Hero onProtectedAction={handleProtectedAction} />
       <FeaturesSection />
@@ -55,7 +55,7 @@ const LandingPage = () => {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

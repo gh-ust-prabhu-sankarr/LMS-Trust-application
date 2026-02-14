@@ -39,6 +39,8 @@ public class Customer {
 
     private Double monthlyIncome;
 
+    private Double bankBalance;
+
     private KYCStatus kycStatus;
 
     private Integer creditScore;

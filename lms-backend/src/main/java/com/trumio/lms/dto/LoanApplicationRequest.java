@@ -8,8 +8,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Map;
-
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -25,17 +23,4 @@ public class LoanApplicationRequest {
     @NotNull(message = "Tenure is required")
     @Positive(message = "Tenure must be positive")
     private Integer tenure;
-
-    @NotNull(message = "emi is required")
-    @Positive(message = "emi must be positive")
-    private Integer emi ;
-
-    @NotNull(message = "emi is required")
-    private Float Interest_Rate ;
-
-
-    @NotNull(message = "emi is required")
-    private Map<String,String> loan_type;
-    private String CustEmail;
-
 }
