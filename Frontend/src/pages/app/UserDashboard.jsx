@@ -7,7 +7,7 @@ import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
 import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 import { 
   User, ShieldCheck, Landmark, ReceiptIndianRupee, ChevronRight, 
-  ArrowRight, FileText, Wallet, Calendar, CheckCircle2, 
+  ArrowRight, FileText, Calendar, CheckCircle2, 
   AlertCircle, ChevronLeft, UploadCloud
 } from "lucide-react";
 
@@ -53,6 +53,10 @@ export default function UserDashboard() {
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
   const [myLoans, setMyLoans] = useState([]);
+  const [myTransactions, setMyTransactions] = useState([]);
+  const [txPage, setTxPage] = useState(1);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
   const [activeLoanId, setActiveLoanId] = useState("");
   const { schedule, docs, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
   const [bulkAmount, setBulkAmount] = useState("");
@@ -98,6 +102,58 @@ export default function UserDashboard() {
 
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { setCurrentPage(1); }, [activeLoanId]);
+  useEffect(() => { setTxPage(1); }, [myTransactions]);
+
+  const loadMyTransactions = async () => {
+    if (!myLoans.length) {
+      setMyTransactions([]);
+      setTxError("");
+      return;
+    }
+
+    setTxLoading(true);
+    setTxError("");
+    try {
+      const settled = await Promise.allSettled(
+        myLoans.map((loan) => repaymentApi.getByLoan(loan.id))
+      );
+
+      const mapped = settled.flatMap((result, index) => {
+        if (result.status !== "fulfilled") return [];
+        const loan = myLoans[index];
+        const rows = result.value?.data || [];
+        return rows.map((r) => ({
+          ...r,
+          txRef: r?.id || "-",
+          txDetails: `Repayment of ${Number(r?.amount || 0)}`,
+          loanProductName: loan?.loanProductName || "Loan",
+          requestedAmount: loan?.requestedAmount,
+        }));
+      });
+
+      mapped.sort((a, b) => {
+        const ta = a?.paymentDate ? new Date(a.paymentDate).getTime() : 0;
+        const tb = b?.paymentDate ? new Date(b.paymentDate).getTime() : 0;
+        return tb - ta;
+      });
+
+      const failures = settled.filter((item) => item.status === "rejected").length;
+      if (failures === settled.length) {
+        setTxError("Failed to fetch transactions.");
+      }
+
+      setMyTransactions(mapped);
+    } catch (e) {
+      setTxError(e?.response?.data?.message || e?.message || "Failed to fetch transactions.");
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "transactions") return;
+    loadMyTransactions();
+  }, [activeTab, myLoans]);
 
   useEffect(() => {
     if (!myKyc) {
@@ -180,6 +236,13 @@ export default function UserDashboard() {
     const start = (currentPage - 1) * pageSize;
     return installments.slice(start, start + pageSize);
   }, [schedule, currentPage]);
+
+  const txPageSize = 6;
+  const paginatedTransactions = useMemo(() => {
+    const start = (txPage - 1) * txPageSize;
+    return myTransactions.slice(start, start + txPageSize);
+  }, [myTransactions, txPage]);
+  const txTotalPages = Math.ceil((myTransactions.length || 0) / txPageSize);
 
   const totalPages = Math.ceil((schedule?.installments?.length || 0) / pageSize);
   const isScheduleFullyPaid = useMemo(() => {
@@ -319,15 +382,6 @@ export default function UserDashboard() {
             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-700 mb-2">Institutional Workspace</p>
             <h2 className="text-3xl font-serif text-slate-900">Welcome, {user?.username || profile?.fullName}</h2>
           </div>
-          <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-3xl border border-slate-200">
-            <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-lg border border-emerald-500">
-              <Wallet size={24} />
-            </div>
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none mb-1">Total Balance</p>
-              <p className="text-2xl font-black text-slate-900 leading-none">{money(profile?.bankBalance)}</p>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -337,6 +391,7 @@ export default function UserDashboard() {
           <SidebarButton id="profile" label="Profile" icon={User} />
           <SidebarButton id="kyc" label="KYC Hub" icon={ShieldCheck} />
           <SidebarButton id="loans" label="My Loans" icon={Landmark} />
+          <SidebarButton id="transactions" label="Transactions" icon={FileText} />
           <SidebarButton id="repayments" label="Payments" icon={ReceiptIndianRupee} />
         </aside>
 
@@ -567,7 +622,87 @@ export default function UserDashboard() {
               </motion.div>
             )}
 
-            {/* 4. REPAYMENTS */}
+            {/* 4. TRANSACTIONS */}
+            {activeTab === "transactions" && (
+              <motion.div key="transactions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
+                <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
+                  <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-slate-900">Customer Transactions</h3>
+                      <p className="text-xs text-slate-500">Only repayment entries made by you.</p>
+                    </div>
+                    <button
+                      onClick={loadMyTransactions}
+                      disabled={txLoading}
+                      className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                    >
+                      {txLoading ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  {txError && (
+                    <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
+                  )}
+
+                  {txLoading ? (
+                    <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
+                  ) : myTransactions.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4">Date & Time</th>
+                            <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Transaction Ref</th>
+                            <th className="px-6 py-4">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginatedTransactions.map((tx, idx) => (
+                            <tr key={`${tx?.id || tx?.transactionId || "tx"}-${idx}`} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 text-sm text-slate-700">{tx?.paymentDate ? new Date(tx.paymentDate).toLocaleString("en-IN") : "-"}</td>
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-800">
+                                {Number(tx?.amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx?.txRef || "-"}</td>
+                              <td className="px-6 py-4 text-xs text-slate-600">{tx?.txDetails || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-10 text-center text-sm text-slate-500">No repayment records found.</div>
+                  )}
+
+                  {!!myTransactions.length && txTotalPages > 1 && (
+                    <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Page {txPage} of {txTotalPages}
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          disabled={txPage === 1}
+                          onClick={() => setTxPage((p) => p - 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <button
+                          disabled={txPage >= txTotalPages}
+                          onClick={() => setTxPage((p) => p + 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* 5. REPAYMENTS */}
             {activeTab === "repayments" && (
               <motion.div key="repayments" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">

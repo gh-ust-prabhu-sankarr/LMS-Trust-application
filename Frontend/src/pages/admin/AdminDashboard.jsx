@@ -36,8 +36,15 @@ export default function AdminDashboard() {
   const [productForm, setProductForm] = useState(initialProductForm);
   const [officerForm, setOfficerForm] = useState(initialOfficerForm);
   const [processing, setProcessing] = useState(false);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
+  const [transactions, setTransactions] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [txCustomerPage, setTxCustomerPage] = useState(1);
+  const [txPage, setTxPage] = useState(1);
 
   const itemsPerPage = 4;
+  const txItemsPerPage = 6;
 
   const loadData = async () => {
     setLoading(true);
@@ -55,6 +62,62 @@ export default function AdminDashboard() {
     loadData();
   }, []);
 
+  const parseAuditAmount = (details) => {
+    const text = String(details || "");
+    const match = text.match(/repayment\s+of\s+([0-9]+(?:\.[0-9]+)?)/i);
+    if (!match) return null;
+    const n = Number(match[1]);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const loadTransactionsForCustomer = async (customer) => {
+    if (!customer?.id) return;
+    setTxLoading(true);
+    setTxError("");
+    try {
+      const res = await adminApi.getAuditByUser(customer.id);
+      const audits = unwrap(res) || res?.data || [];
+      const rows = audits
+        .filter((a) => {
+          const details = String(a?.details || "").toLowerCase();
+          const isRepayment = details.includes("repayment of");
+          const isCheckoutEvent = details.includes("checkout session");
+          return isRepayment && !isCheckoutEvent;
+        })
+        .map((a) => ({
+          id: `${customer?.id || "u"}-${a?.id || a?.timestamp || Math.random()}`,
+          amount: parseAuditAmount(a?.details),
+          details: a?.details || "-",
+          transactionRef: a?.entityId || "-",
+          timestamp: a?.timestamp || null,
+        }));
+
+      rows.sort((a, b) => {
+        const ta = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tb = b?.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return tb - ta;
+      });
+
+      setSelectedCustomer(customer);
+      setTransactions(rows);
+      setTxPage(1);
+    } catch (err) {
+      setTxError(err?.response?.data?.message || err?.message || "Failed to fetch transaction data.");
+      setTransactions([]);
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "TRANSACTIONS") return;
+    setTxError("");
+    setTransactions([]);
+    setSelectedCustomer(null);
+    setTxPage(1);
+    setTxCustomerPage(1);
+  }, [activeTab]);
+
   const filteredUsers = useMemo(
     () =>
       users.filter(
@@ -67,6 +130,24 @@ export default function AdminDashboard() {
 
   const totalUserPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const paginatedUsers = filteredUsers.slice((userPage - 1) * itemsPerPage, userPage * itemsPerPage);
+  const customerUsers = useMemo(
+    () => users.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER"),
+    [users]
+  );
+  const totalCustomerPages = Math.ceil(customerUsers.length / txItemsPerPage);
+  const paginatedCustomers = customerUsers.slice((txCustomerPage - 1) * txItemsPerPage, txCustomerPage * txItemsPerPage);
+  const totalTxPages = Math.ceil((transactions.length || 0) / txItemsPerPage);
+  const paginatedTransactions = useMemo(() => {
+    const start = (txPage - 1) * txItemsPerPage;
+    return transactions.slice(start, start + txItemsPerPage);
+  }, [transactions, txPage]);
+  const formatDateTime = (val) => (val ? new Date(val).toLocaleString("en-IN") : "-");
+  const money = (n) => {
+    const value = Number(n);
+    return Number.isFinite(value)
+      ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 })
+      : "-";
+  };
 
   const handleToggleUser = async (user) => {
     if (String(user?.role || "").toUpperCase() === "ADMIN") {
@@ -151,6 +232,7 @@ export default function AdminDashboard() {
     <PortalShell title="Admin Command Center" subtitle="Manage system access and loan instrument deployment.">
       <div className="mb-10 flex space-x-1 rounded-2xl bg-slate-200/50 p-1.5 max-w-2xl mx-auto shadow-inner">
         <TabButton active={activeTab === "DIRECTORY"} onClick={() => setActiveTab("DIRECTORY")} icon={<LayoutGrid size={16} />} label="User Registry" />
+        <TabButton active={activeTab === "TRANSACTIONS"} onClick={() => setActiveTab("TRANSACTIONS")} icon={<Users size={16} />} label="Transactions" />
         <TabButton active={activeTab === "OFFICER"} onClick={() => setActiveTab("OFFICER")} icon={<UserPlus size={16} />} label="Add Officer" />
         <TabButton active={activeTab === "PRODUCT"} onClick={() => setActiveTab("PRODUCT")} icon={<PackagePlus size={16} />} label="Issue Product" />
       </div>
@@ -273,6 +355,140 @@ export default function AdminDashboard() {
               </form>
             </div>
           </div>
+        )}
+
+        {activeTab === "TRANSACTIONS" && (
+          <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                  <Users size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">Customer Transactions</h3>
+                  <p className="text-xs text-slate-500">Only repayment entries made by customers.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => selectedCustomer && loadTransactionsForCustomer(selectedCustomer)}
+                disabled={txLoading || !selectedCustomer}
+                className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+              >
+                {txLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {txError && (
+              <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
+              <div className="lg:col-span-4 border-r border-slate-100">
+                <div className="px-6 py-4 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Customers
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {paginatedCustomers.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => loadTransactionsForCustomer(u)}
+                      className={`w-full text-left px-6 py-4 transition-colors ${
+                        selectedCustomer?.id === u.id ? "bg-emerald-50" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="text-sm font-bold text-slate-800">{u.username}</div>
+                      <div className="text-[10px] text-slate-400">{u.email}</div>
+                    </button>
+                  ))}
+                  {!paginatedCustomers.length && (
+                    <div className="px-6 py-8 text-sm text-slate-500">No customers found.</div>
+                  )}
+                </div>
+                {totalCustomerPages > 1 && (
+                  <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      Page {txCustomerPage} of {totalCustomerPages}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={txCustomerPage === 1}
+                        onClick={() => setTxCustomerPage((p) => p - 1)}
+                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button
+                        disabled={txCustomerPage >= totalCustomerPages}
+                        onClick={() => setTxCustomerPage((p) => p + 1)}
+                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="lg:col-span-8">
+                {!selectedCustomer ? (
+                  <div className="p-10 text-center text-sm text-slate-500">Select a customer to view transactions.</div>
+                ) : txLoading ? (
+                  <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
+                ) : transactions.length ? (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4">Date & Time</th>
+                            <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Transaction Ref</th>
+                            <th className="px-6 py-4">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginatedTransactions.map((tx) => (
+                            <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 text-sm text-slate-700">{formatDateTime(tx.timestamp)}</td>
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-800">{money(tx.amount)}</td>
+                              <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx.transactionRef}</td>
+                              <td className="px-6 py-4 text-xs text-slate-600">{tx.details}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {totalTxPages > 1 && (
+                      <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          Page {txPage} of {totalTxPages}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            disabled={txPage === 1}
+                            onClick={() => setTxPage((p) => p - 1)}
+                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button
+                            disabled={txPage >= totalTxPages}
+                            onClick={() => setTxPage((p) => p + 1)}
+                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="p-10 text-center text-sm text-slate-500">No repayment records found for this customer.</div>
+                )}
+              </div>
+            </div>
+          </section>
         )}
 
         {activeTab === "PRODUCT" && (

@@ -106,6 +106,7 @@ export const repaymentApi = {
   api.post("/repayments/stripe/confirm", { sessionId }),
 
   getByLoan: (loanId) => api.get(`/repayments/loan/${loanId}`),
+  getAll: () => api.get("/repayments"),
   getSchedule: (loanId) => api.get(`/repayments/schedule/${loanId}`),
   markMissed: (loanId) => api.post(`/repayments/miss/${loanId}`),
 };

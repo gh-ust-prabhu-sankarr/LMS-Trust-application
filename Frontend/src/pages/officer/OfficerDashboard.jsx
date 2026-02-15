@@ -222,6 +222,7 @@ export default function OfficerDashboard() {
     await loanApi.reject(selectedLoan.id, reason);
   });
 
+
   // --- UI ATOMS ---
   const SidebarButton = ({ id, label, icon: Icon }) => (
     <button
