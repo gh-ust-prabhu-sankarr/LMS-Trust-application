@@ -8,6 +8,15 @@ import { customerApi, loanApi, productApi, unwrap } from "../../api/domainApi.js
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
+const BLOCKING_LOAN_STATUSES = new Set([
+  "DRAFT",
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "APPROVED",
+  "DISBURSED",
+  "ACTIVE",
+]);
+
 const THEME_STYLES = {
   emerald: {
     text: "text-emerald-600",
@@ -130,7 +139,7 @@ export default function LoanDetailsEMI() {
         try {
           const res = await loanApi.getMyLoans();
           const loans = unwrap(res) || res?.data || [];
-          setMyLoans(Array.isArray(loans) ? loans.filter(loan => loan.status !== "DRAFT") : []);
+          setMyLoans(Array.isArray(loans) ? loans : []);
         } catch {
           setMyLoans([]);
         }
@@ -173,7 +182,11 @@ export default function LoanDetailsEMI() {
 
   // Check if user has already applied for this loan type
   const hasAlreadyApplied = useMemo(() => {
-    return myLoans.some(loan => loan.loanProductId === activeLoan?.id);
+    return myLoans.some((loan) => {
+      if (loan.loanProductId !== activeLoan?.id) return false;
+      const status = String(loan.status || "").toUpperCase();
+      return BLOCKING_LOAN_STATUSES.has(status);
+    });
   }, [myLoans, activeLoan]);
 
   const handleProceedToApplication = async () => {

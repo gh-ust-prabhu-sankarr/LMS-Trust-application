@@ -14,6 +14,9 @@ import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
 import OfficerDashboard from "./pages/officer/OfficerDashboard.jsx";
 import LoanDetailsEMI from "./pages/loans/LoanDetailsEMI.jsx";
 import LoanApplication from "./pages/loans/applications/LoanApplication.jsx";
+import PaySuccess from "./pages/pay/PaySuccess.jsx";
+import PayCancel from "./pages/pay/PayCancel.jsx";
+
 
 export default function App() {
   return (
@@ -52,17 +55,13 @@ export default function App() {
           <Route path="/education-loan/apply" element={<Navigate to="/loan/education/apply" replace />} />
 
           <Route path="/gate" element={<AuthGate />} />
+          <Route path="/dashboard" element={<AuthGate />} />
+          <Route path="/pay/success" element={<PaySuccess />} />
+          <Route path="/pay/cancel" element={<PayCancel />} />
+
 
           <Route
             path="/app"
-            element={
-              <ProtectedRoute allow={["CUSTOMER"]}>
-                <UserDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dashboard"
             element={
               <ProtectedRoute allow={["CUSTOMER"]}>
                 <UserDashboard />

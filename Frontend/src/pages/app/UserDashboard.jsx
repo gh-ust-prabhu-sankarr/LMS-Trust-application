@@ -7,7 +7,7 @@ import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
 import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 import { 
   User, ShieldCheck, Landmark, ReceiptIndianRupee, ChevronRight, 
-  ArrowRight, FileText, Wallet, Calendar, CheckCircle2, 
+  ArrowRight, FileText, Calendar, CheckCircle2, 
   AlertCircle, ChevronLeft, UploadCloud
 } from "lucide-react";
 
@@ -53,10 +53,18 @@ export default function UserDashboard() {
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
   const [myLoans, setMyLoans] = useState([]);
+  const [myTransactions, setMyTransactions] = useState([]);
+  const [txPage, setTxPage] = useState(1);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
   const [activeLoanId, setActiveLoanId] = useState("");
   const { schedule, docs, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
   const [bulkAmount, setBulkAmount] = useState("");
   const [myKyc, setMyKyc] = useState(null);
+  const [agreementLoan, setAgreementLoan] = useState(null);
+  const [agreementName, setAgreementName] = useState("");
+  const [agreementBusy, setAgreementBusy] = useState(false);
+  const [agreementError, setAgreementError] = useState("");
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -98,6 +106,58 @@ export default function UserDashboard() {
 
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { setCurrentPage(1); }, [activeLoanId]);
+  useEffect(() => { setTxPage(1); }, [myTransactions]);
+
+  const loadMyTransactions = async () => {
+    if (!myLoans.length) {
+      setMyTransactions([]);
+      setTxError("");
+      return;
+    }
+
+    setTxLoading(true);
+    setTxError("");
+    try {
+      const settled = await Promise.allSettled(
+        myLoans.map((loan) => repaymentApi.getByLoan(loan.id))
+      );
+
+      const mapped = settled.flatMap((result, index) => {
+        if (result.status !== "fulfilled") return [];
+        const loan = myLoans[index];
+        const rows = result.value?.data || [];
+        return rows.map((r) => ({
+          ...r,
+          txRef: r?.id || "-",
+          txDetails: `Repayment of ${Number(r?.amount || 0)}`,
+          loanProductName: loan?.loanProductName || "Loan",
+          requestedAmount: loan?.requestedAmount,
+        }));
+      });
+
+      mapped.sort((a, b) => {
+        const ta = a?.paymentDate ? new Date(a.paymentDate).getTime() : 0;
+        const tb = b?.paymentDate ? new Date(b.paymentDate).getTime() : 0;
+        return tb - ta;
+      });
+
+      const failures = settled.filter((item) => item.status === "rejected").length;
+      if (failures === settled.length) {
+        setTxError("Failed to fetch transactions.");
+      }
+
+      setMyTransactions(mapped);
+    } catch (e) {
+      setTxError(e?.response?.data?.message || e?.message || "Failed to fetch transactions.");
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "transactions") return;
+    loadMyTransactions();
+  }, [activeTab, myLoans]);
 
   useEffect(() => {
     if (!myKyc) {
@@ -181,10 +241,90 @@ export default function UserDashboard() {
     return installments.slice(start, start + pageSize);
   }, [schedule, currentPage]);
 
+  const txPageSize = 6;
+  const paginatedTransactions = useMemo(() => {
+    const start = (txPage - 1) * txPageSize;
+    return myTransactions.slice(start, start + txPageSize);
+  }, [myTransactions, txPage]);
+  const txTotalPages = Math.ceil((myTransactions.length || 0) / txPageSize);
+
   const totalPages = Math.ceil((schedule?.installments?.length || 0) / pageSize);
+  const isScheduleFullyPaid = useMemo(() => {
+    const items = schedule?.installments || [];
+    if (!items.length) return false;
+    return items.every((ins) => String(ins?.status || "").toUpperCase() === "PAID");
+  }, [schedule]);
+  const pendingAmount = (ins) => {
+    const total = Number(ins?.totalAmount || 0);
+    const paid = Number(ins?.paidAmount || 0);
+    return Math.max(0, total - paid);
+  };
+  const unpaidInstallments = useMemo(
+    () => (schedule?.installments || []).filter((ins) => String(ins?.status || "").toUpperCase() !== "PAID"),
+    [schedule]
+  );
+  const nextPayableInstallment = unpaidInstallments[0] || null;
+  const advanceCapCount = 4;
+  const advanceEligibleInstallments = useMemo(
+    () => unpaidInstallments.slice(0, advanceCapCount),
+    [unpaidInstallments]
+  );
+  const maxAdvanceAmount = useMemo(
+    () => advanceEligibleInstallments.reduce((sum, ins) => sum + pendingAmount(ins), 0),
+    [advanceEligibleInstallments]
+  );
+
+  useEffect(() => {
+    if (!activeLoanId || !isScheduleFullyPaid) return;
+
+    // Reflect closure immediately in UI, then sync from backend.
+    setMyLoans((prev) =>
+      prev.map((loan) => (loan.id === activeLoanId ? { ...loan, status: "CLOSED" } : loan))
+    );
+
+    loanApi
+      .getMyLoans()
+      .then((res) => setMyLoans(res?.data || []))
+      .catch(() => {});
+  }, [activeLoanId, isScheduleFullyPaid]);
 
   const handleFileDownload = (id, name) => fileApi.download(id, name).catch(() => alert("Download failed"));
   const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
+
+  const openAgreementModal = (loan) => {
+    setAgreementLoan(loan);
+    setAgreementName(profile?.fullName || user?.username || "");
+    setAgreementError("");
+  };
+
+  const closeAgreementModal = (force = false) => {
+    if (agreementBusy && !force) return;
+    setAgreementLoan(null);
+    setAgreementName("");
+    setAgreementError("");
+  };
+
+  const submitAgreementAcceptance = async () => {
+    if (!agreementLoan?.id) return;
+    const signer = agreementName.trim();
+    if (!signer) {
+      setAgreementError("Please type your full name to accept.");
+      return;
+    }
+
+    setAgreementBusy(true);
+    setAgreementError("");
+    try {
+      await loanApi.acceptAgreement(agreementLoan.id, { acceptedName: signer });
+      const freshLoans = await loanApi.getMyLoans();
+      setMyLoans(freshLoans?.data || []);
+      closeAgreementModal(true);
+    } catch (e) {
+      setAgreementError(e?.response?.data?.message || e?.message || "Agreement acceptance failed.");
+    } finally {
+      setAgreementBusy(false);
+    }
+  };
 
   const KYC_MAX_ATTEMPTS = 2;
   const KYC_COOLDOWN_MONTHS = 3;
@@ -278,17 +418,8 @@ export default function UserDashboard() {
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2" />
         <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-700 mb-2">Institutional Workspace</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-700 mb-2"></p>
             <h2 className="text-3xl font-serif text-slate-900">Welcome, {user?.username || profile?.fullName}</h2>
-          </div>
-          <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-3xl border border-slate-200">
-            <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-lg border border-emerald-500">
-              <Wallet size={24} />
-            </div>
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none mb-1">Total Balance</p>
-              <p className="text-2xl font-black text-slate-900 leading-none">{money(profile?.bankBalance)}</p>
-            </div>
           </div>
         </div>
       </section>
@@ -299,6 +430,7 @@ export default function UserDashboard() {
           <SidebarButton id="profile" label="Profile" icon={User} />
           <SidebarButton id="kyc" label="KYC Hub" icon={ShieldCheck} />
           <SidebarButton id="loans" label="My Loans" icon={Landmark} />
+          <SidebarButton id="transactions" label="Transactions" icon={FileText} />
           <SidebarButton id="repayments" label="Payments" icon={ReceiptIndianRupee} />
         </aside>
 
@@ -341,7 +473,7 @@ export default function UserDashboard() {
                       <Field label="Contact">
                         <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
-                      <Field label="Tax ID (PAN)">
+                      <Field label="Pan Number">
                         <input value={profileForm.panNumber} onChange={(e) => handleProfileField("panNumber", e.target.value.toUpperCase())} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
                       <Field label="Employment">
@@ -359,7 +491,7 @@ export default function UserDashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InfoBox label="Legal Name" value={profile?.fullName} />
                       <InfoBox label="Contact" value={profile?.phone} />
-                      <InfoBox label="Tax ID (PAN)" value={maskPanNumber(profile?.panNumber)} />
+                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} />
                       <InfoBox label="Employment" value={profile?.employmentType} />
                       <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
                       <InfoBox label="Address" value={profile?.address} />
@@ -520,7 +652,18 @@ export default function UserDashboard() {
                           <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
                           <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
                           <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
-                          <td className="p-6 text-right"><button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button></td>
+                          <td className="p-6 text-right">
+                            {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
+                              <button
+                                onClick={() => openAgreementModal(l)}
+                                className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
+                              >
+                                Accept Agreement
+                              </button>
+                            ) : (
+                              <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -529,7 +672,87 @@ export default function UserDashboard() {
               </motion.div>
             )}
 
-            {/* 4. REPAYMENTS */}
+            {/* 4. TRANSACTIONS */}
+            {activeTab === "transactions" && (
+              <motion.div key="transactions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
+                <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
+                  <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-slate-900">Customer Transactions</h3>
+                      <p className="text-xs text-slate-500">Only repayment entries made by you.</p>
+                    </div>
+                    <button
+                      onClick={loadMyTransactions}
+                      disabled={txLoading}
+                      className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                    >
+                      {txLoading ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  {txError && (
+                    <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
+                  )}
+
+                  {txLoading ? (
+                    <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
+                  ) : myTransactions.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4">Date & Time</th>
+                            <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Transaction Ref</th>
+                            <th className="px-6 py-4">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginatedTransactions.map((tx, idx) => (
+                            <tr key={`${tx?.id || tx?.transactionId || "tx"}-${idx}`} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 text-sm text-slate-700">{tx?.paymentDate ? new Date(tx.paymentDate).toLocaleString("en-IN") : "-"}</td>
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-800">
+                                {Number(tx?.amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx?.txRef || "-"}</td>
+                              <td className="px-6 py-4 text-xs text-slate-600">{tx?.txDetails || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-10 text-center text-sm text-slate-500">No repayment records found.</div>
+                  )}
+
+                  {!!myTransactions.length && txTotalPages > 1 && (
+                    <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Page {txPage} of {txTotalPages}
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          disabled={txPage === 1}
+                          onClick={() => setTxPage((p) => p - 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <button
+                          disabled={txPage >= txTotalPages}
+                          onClick={() => setTxPage((p) => p + 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* 5. REPAYMENTS */}
             {activeTab === "repayments" && (
               <motion.div key="repayments" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
@@ -542,8 +765,30 @@ export default function UserDashboard() {
                   {activeLoanId && (
                     <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
-                        Pay Multiple EMIs (Advance Payment)
+                        Pay Multiple EMIs (Up To 4 Months)
                       </p>
+                      <p className="mb-3 text-xs font-semibold text-slate-600">
+                        You can pay up to the next {Math.min(advanceCapCount, unpaidInstallments.length)} EMIs in advance.
+                        Max now: {money(maxAdvanceAmount)}
+                      </p>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {advanceEligibleInstallments.map((_, idx) => {
+                          const count = idx + 1;
+                          const suggestedAmount = advanceEligibleInstallments
+                            .slice(0, count)
+                            .reduce((sum, item) => sum + pendingAmount(item), 0);
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => setBulkAmount(String(suggestedAmount.toFixed(2)))}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-100"
+                            >
+                              {count} Month
+                            </button>
+                          );
+                        })}
+                      </div>
                       <div className="flex flex-col gap-3 md:flex-row">
                         <input
                           type="number"
@@ -557,7 +802,10 @@ export default function UserDashboard() {
                         <button
                           disabled={actionBusy}
                           onClick={async () => {
-                            const ok = await payCustomAmount(bulkAmount);
+                            const amount = Number(bulkAmount || 0);
+                            if (!Number.isFinite(amount) || amount <= 0) return;
+                            if (amount > maxAdvanceAmount) return;
+                            const ok = await payCustomAmount(amount);
                             if (ok) setBulkAmount("");
                           }}
                           className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:border-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
@@ -567,6 +815,11 @@ export default function UserDashboard() {
                       </div>
                       {actionError && (
                         <p className="mt-2 text-xs font-semibold text-rose-600">{actionError}</p>
+                      )}
+                      {!!bulkAmount && Number(bulkAmount) > maxAdvanceAmount && (
+                        <p className="mt-2 text-xs font-semibold text-rose-600">
+                          Custom amount cannot exceed {money(maxAdvanceAmount)} (next 4 EMIs cap).
+                        </p>
                       )}
                     </div>
                   )}
@@ -584,7 +837,7 @@ export default function UserDashboard() {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${ins.status === 'PAID' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600 border-slate-300'}`}>{ins.status}</span>
-                            {ins.status !== 'PAID' && (
+                            {nextPayableInstallment && ins.installmentNumber === nextPayableInstallment.installmentNumber && (
                               <button onClick={() => payInstallment(ins)} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all">Pay EMI</button>
                             )}
                           </div>
@@ -624,6 +877,47 @@ export default function UserDashboard() {
           </AnimatePresence>
         </main>
       </div>
+
+      {agreementLoan && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-xl rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-700 mb-2">Loan Agreement</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-3">Accept Loan Terms</h3>
+            <p className="text-sm text-slate-600 mb-5">
+              Your loan is approved. Please confirm your agreement by typing your full name.
+            </p>
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Loan: <span className="font-semibold">{agreementLoan?.loanProductName || "-"}</span>
+            </div>
+            <input
+              type="text"
+              value={agreementName}
+              onChange={(e) => setAgreementName(e.target.value)}
+              placeholder="Type your full name"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500"
+            />
+            {agreementError && (
+              <p className="mt-3 text-sm font-semibold text-rose-600">{agreementError}</p>
+            )}
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={closeAgreementModal}
+                disabled={agreementBusy}
+                className="rounded-xl border border-slate-300 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitAgreementAcceptance}
+                disabled={agreementBusy}
+                className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-emerald-700 hover:border-emerald-600 disabled:opacity-60"
+              >
+                {agreementBusy ? "Accepting..." : "Accept Agreement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }
