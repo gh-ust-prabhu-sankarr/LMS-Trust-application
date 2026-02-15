@@ -129,6 +129,7 @@ public class LoanApplicationService {
                 .interestRate(fixedInterestRate)
                 .emi(emi)
                 .status(LoanStatus.DRAFT)
+                .agreementAccepted(false)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -185,6 +186,40 @@ public class LoanApplicationService {
     public List<LoanApplication> getLoansByStatus(LoanStatus status) {
         List<LoanApplication> loans = loanApplicationRepository.findByStatus(status);
         return enrichLoansWithProductNames(loans);
+    }
+
+    public ApiResponse<LoanApplication> acceptLoanAgreement(String loanId, String acceptedName) {
+        Customer customer = customerService.getCurrentCustomer();
+        LoanApplication loan = getLoanById(loanId);
+
+        if (!loan.getCustomerId().equals(customer.getId())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+
+        if (loan.getStatus() != LoanStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Agreement can only be accepted after loan is approved");
+        }
+
+        String signer = acceptedName == null ? "" : acceptedName.trim();
+        if (signer.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Accepted name is required");
+        }
+
+        if (Boolean.TRUE.equals(loan.getAgreementAccepted())) {
+            return ApiResponse.success("Agreement already accepted", loan);
+        }
+
+        loan.setAgreementAccepted(true);
+        loan.setAgreementAcceptedName(signer);
+        loan.setAgreementAcceptedAt(LocalDateTime.now());
+        loan.setUpdatedAt(LocalDateTime.now());
+
+        LoanApplication saved = loanApplicationRepository.save(loan);
+        auditService.log(customer.getUserId(), "LOAN_AGREEMENT_ACCEPTED", "LOAN_APPLICATION",
+                saved.getId(), "Agreement accepted by: " + signer);
+
+        return ApiResponse.success("Loan agreement accepted successfully", saved);
     }
 
     private List<LoanApplication> enrichLoansWithProductNames(List<LoanApplication> loans) {

@@ -55,22 +55,13 @@ export default function App() {
           <Route path="/education-loan/apply" element={<Navigate to="/loan/education/apply" replace />} />
 
           <Route path="/gate" element={<AuthGate />} />
-          
-          <Route path="/dashboard" element={<UserDashboard />} />
+          <Route path="/dashboard" element={<AuthGate />} />
           <Route path="/pay/success" element={<PaySuccess />} />
           <Route path="/pay/cancel" element={<PayCancel />} />
 
 
           <Route
             path="/app"
-            element={
-              <ProtectedRoute allow={["CUSTOMER"]}>
-                <UserDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dashboard"
             element={
               <ProtectedRoute allow={["CUSTOMER"]}>
                 <UserDashboard />

@@ -61,6 +61,10 @@ export default function UserDashboard() {
   const { schedule, docs, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
   const [bulkAmount, setBulkAmount] = useState("");
   const [myKyc, setMyKyc] = useState(null);
+  const [agreementLoan, setAgreementLoan] = useState(null);
+  const [agreementName, setAgreementName] = useState("");
+  const [agreementBusy, setAgreementBusy] = useState(false);
+  const [agreementError, setAgreementError] = useState("");
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -287,6 +291,41 @@ export default function UserDashboard() {
   const handleFileDownload = (id, name) => fileApi.download(id, name).catch(() => alert("Download failed"));
   const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
 
+  const openAgreementModal = (loan) => {
+    setAgreementLoan(loan);
+    setAgreementName(profile?.fullName || user?.username || "");
+    setAgreementError("");
+  };
+
+  const closeAgreementModal = (force = false) => {
+    if (agreementBusy && !force) return;
+    setAgreementLoan(null);
+    setAgreementName("");
+    setAgreementError("");
+  };
+
+  const submitAgreementAcceptance = async () => {
+    if (!agreementLoan?.id) return;
+    const signer = agreementName.trim();
+    if (!signer) {
+      setAgreementError("Please type your full name to accept.");
+      return;
+    }
+
+    setAgreementBusy(true);
+    setAgreementError("");
+    try {
+      await loanApi.acceptAgreement(agreementLoan.id, { acceptedName: signer });
+      const freshLoans = await loanApi.getMyLoans();
+      setMyLoans(freshLoans?.data || []);
+      closeAgreementModal(true);
+    } catch (e) {
+      setAgreementError(e?.response?.data?.message || e?.message || "Agreement acceptance failed.");
+    } finally {
+      setAgreementBusy(false);
+    }
+  };
+
   const KYC_MAX_ATTEMPTS = 2;
   const KYC_COOLDOWN_MONTHS = 3;
   const attemptsUsed = Number(myKyc?.submissionCount || 0);
@@ -379,7 +418,7 @@ export default function UserDashboard() {
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2" />
         <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-700 mb-2">Institutional Workspace</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-700 mb-2"></p>
             <h2 className="text-3xl font-serif text-slate-900">Welcome, {user?.username || profile?.fullName}</h2>
           </div>
         </div>
@@ -434,7 +473,7 @@ export default function UserDashboard() {
                       <Field label="Contact">
                         <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
-                      <Field label="Tax ID (PAN)">
+                      <Field label="Pan Number">
                         <input value={profileForm.panNumber} onChange={(e) => handleProfileField("panNumber", e.target.value.toUpperCase())} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
                       <Field label="Employment">
@@ -452,7 +491,7 @@ export default function UserDashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InfoBox label="Legal Name" value={profile?.fullName} />
                       <InfoBox label="Contact" value={profile?.phone} />
-                      <InfoBox label="Tax ID (PAN)" value={maskPanNumber(profile?.panNumber)} />
+                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} />
                       <InfoBox label="Employment" value={profile?.employmentType} />
                       <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
                       <InfoBox label="Address" value={profile?.address} />
@@ -613,7 +652,18 @@ export default function UserDashboard() {
                           <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
                           <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
                           <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
-                          <td className="p-6 text-right"><button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button></td>
+                          <td className="p-6 text-right">
+                            {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
+                              <button
+                                onClick={() => openAgreementModal(l)}
+                                className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
+                              >
+                                Accept Agreement
+                              </button>
+                            ) : (
+                              <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -827,6 +877,47 @@ export default function UserDashboard() {
           </AnimatePresence>
         </main>
       </div>
+
+      {agreementLoan && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-xl rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-700 mb-2">Loan Agreement</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-3">Accept Loan Terms</h3>
+            <p className="text-sm text-slate-600 mb-5">
+              Your loan is approved. Please confirm your agreement by typing your full name.
+            </p>
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Loan: <span className="font-semibold">{agreementLoan?.loanProductName || "-"}</span>
+            </div>
+            <input
+              type="text"
+              value={agreementName}
+              onChange={(e) => setAgreementName(e.target.value)}
+              placeholder="Type your full name"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500"
+            />
+            {agreementError && (
+              <p className="mt-3 text-sm font-semibold text-rose-600">{agreementError}</p>
+            )}
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={closeAgreementModal}
+                disabled={agreementBusy}
+                className="rounded-xl border border-slate-300 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitAgreementAcceptance}
+                disabled={agreementBusy}
+                className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-emerald-700 hover:border-emerald-600 disabled:opacity-60"
+              >
+                {agreementBusy ? "Accepting..." : "Accept Agreement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }

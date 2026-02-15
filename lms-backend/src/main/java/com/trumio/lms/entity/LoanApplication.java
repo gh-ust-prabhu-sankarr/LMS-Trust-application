@@ -55,6 +55,12 @@ public class LoanApplication {
 
     private LocalDateTime disbursedAt;
 
+    private Boolean agreementAccepted;
+
+    private String agreementAcceptedName;
+
+    private LocalDateTime agreementAcceptedAt;
+
     private List<String> documents;
 
     private LocalDateTime createdAt;

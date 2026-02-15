@@ -112,7 +112,6 @@ export default function LoanOfficerLogin() {
          
 
           <Link to="/forgot-password" className="text-xs font-semibold text-emerald-700 hover:text-emerald-800">
-            Forgot password?
           </Link>
         </div>
 

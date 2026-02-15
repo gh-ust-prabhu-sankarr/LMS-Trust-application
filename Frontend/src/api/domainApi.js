@@ -83,6 +83,7 @@ export const productApi = {
 export const loanApi = {
   create: (payload) => api.post("/loans", payload),
   submit: (loanId) => api.post(`/loans/${loanId}/submit`),
+  acceptAgreement: (loanId, payload) => api.post(`/loans/${loanId}/agreement/accept`, payload),
   getMyLoans: () => api.get("/loans/my-loans"),
   getById: (loanId) => api.get(`/loans/${loanId}`),
   getByStatus: (status) => api.get(`/loans/status/${status}`),

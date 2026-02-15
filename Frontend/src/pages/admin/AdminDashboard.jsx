@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
 import { parseApplicationFields, parseCommaSeparated, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
-import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid } from "lucide-react";
 
 const initialProductForm = {
@@ -42,6 +41,7 @@ export default function AdminDashboard() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [txCustomerPage, setTxCustomerPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
+  const [txSearch, setTxSearch] = useState("");
 
   const itemsPerPage = 4;
   const txItemsPerPage = 6;
@@ -116,6 +116,7 @@ export default function AdminDashboard() {
     setSelectedCustomer(null);
     setTxPage(1);
     setTxCustomerPage(1);
+    setTxSearch("");
   }, [activeTab]);
 
   const filteredUsers = useMemo(
@@ -134,8 +135,16 @@ export default function AdminDashboard() {
     () => users.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER"),
     [users]
   );
-  const totalCustomerPages = Math.ceil(customerUsers.length / txItemsPerPage);
-  const paginatedCustomers = customerUsers.slice((txCustomerPage - 1) * txItemsPerPage, txCustomerPage * txItemsPerPage);
+  const filteredTxCustomers = useMemo(() => {
+    const q = txSearch.trim().toLowerCase();
+    if (!q) return customerUsers;
+    return customerUsers.filter((u) =>
+      String(u?.username || "").toLowerCase().includes(q) ||
+      String(u?.email || "").toLowerCase().includes(q)
+    );
+  }, [customerUsers, txSearch]);
+  const totalCustomerPages = Math.ceil(filteredTxCustomers.length / txItemsPerPage);
+  const paginatedCustomers = filteredTxCustomers.slice((txCustomerPage - 1) * txItemsPerPage, txCustomerPage * txItemsPerPage);
   const totalTxPages = Math.ceil((transactions.length || 0) / txItemsPerPage);
   const paginatedTransactions = useMemo(() => {
     const start = (txPage - 1) * txItemsPerPage;
@@ -148,6 +157,10 @@ export default function AdminDashboard() {
       ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 })
       : "-";
   };
+
+  useEffect(() => {
+    setTxCustomerPage(1);
+  }, [txSearch]);
 
   const handleToggleUser = async (user) => {
     if (String(user?.role || "").toUpperCase() === "ADMIN") {
@@ -267,7 +280,6 @@ export default function AdminDashboard() {
                 <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
                   <tr>
                     <th className="px-8 py-4">Identity</th>
-                    <th className="px-8 py-4">KYC IDs</th>
                     <th className="px-8 py-4 text-center">System Role</th>
                     <th className="px-8 py-4 text-right">Access Control</th>
                   </tr>
@@ -284,12 +296,6 @@ export default function AdminDashboard() {
                             <div className="text-sm font-bold text-slate-800">{u.username}</div>
                             <div className="text-[10px] text-slate-400">{u.email}</div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-8 py-4">
-                        <div className="space-y-1 text-[10px] text-slate-500">
-                          <div>PAN: <span className="font-semibold text-slate-700">{maskPanNumber(u.panNumber)}</span></div>
-                          <div>Aadhaar: <span className="font-semibold text-slate-700">{maskAadhaarNumber(u.aadhaarNumber)}</span></div>
                         </div>
                       </td>
                       <td className="px-8 py-4 text-center">
@@ -387,6 +393,18 @@ export default function AdminDashboard() {
                 <div className="px-6 py-4 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Customers
                 </div>
+                <div className="px-6 py-3 border-b border-slate-100">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      value={txSearch}
+                      onChange={(e) => setTxSearch(e.target.value)}
+                      placeholder="Search customer..."
+                      className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                </div>
                 <div className="divide-y divide-slate-100">
                   {paginatedCustomers.map((u) => (
                     <button
@@ -401,7 +419,7 @@ export default function AdminDashboard() {
                     </button>
                   ))}
                   {!paginatedCustomers.length && (
-                    <div className="px-6 py-8 text-sm text-slate-500">No customers found.</div>
+                    <div className="px-6 py-8 text-sm text-slate-500">No matching customers.</div>
                   )}
                 </div>
                 {totalCustomerPages > 1 && (
