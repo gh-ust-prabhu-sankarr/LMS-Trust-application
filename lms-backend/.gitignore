@@ -33,3 +33,6 @@ build/
 .vscode/
 
 *.pdf
+.idea/workspace.xmlm
+uploads/
+
