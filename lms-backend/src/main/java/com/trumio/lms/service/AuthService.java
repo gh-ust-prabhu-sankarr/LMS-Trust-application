@@ -27,9 +27,6 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
-    private static final double INITIAL_CUSTOMER_WALLET = 100_000.0;
-    private static final double INITIAL_OFFICER_WALLET = 100_000_000.0;
-
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
@@ -38,12 +35,12 @@ public class AuthService {
 
     public JwtResponse login(LoginRequest request) {
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
         );
 
         String token = tokenProvider.generateToken(authentication);
 
-        User user = userRepository.findByUsername(request.getUsername())
+        User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         auditService.log(user.getId(), "LOGIN", "USER", user.getId(), "User logged in");
@@ -67,7 +64,6 @@ public class AuthService {
                 .role(Role.CUSTOMER)
                 .active(true)
                 .kycStatus(null)
-                .walletBalance(INITIAL_CUSTOMER_WALLET)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -82,17 +78,6 @@ public class AuthService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        if (user.getWalletBalance() == null) {
-            double defaultBalance = switch (user.getRole()) {
-                case CUSTOMER -> INITIAL_CUSTOMER_WALLET;
-                case CREDIT_OFFICER -> INITIAL_OFFICER_WALLET;
-                default -> 0.0;
-            };
-            user.setWalletBalance(defaultBalance);
-            user.setUpdatedAt(LocalDateTime.now());
-            user = userRepository.save(user);
-        }
-
         return UserProfileResponse.builder()
                 .id(user.getId())
                 .username(user.getUsername())
@@ -100,7 +85,6 @@ public class AuthService {
                 .role(user.getRole())
                 .kycStatus(user.getKycStatus())
                 .active(user.getActive())
-                .walletBalance(user.getWalletBalance())
                 .build();
     }
 }

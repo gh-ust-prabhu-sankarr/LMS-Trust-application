@@ -43,9 +43,6 @@ public class Customer {
 
     private Integer creditScore;
 
-    // Wallet balance in INR
-    private Double walletBalance;
-
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

@@ -5,6 +5,8 @@ import Input from "../../components/ui/Input.jsx";
 import Button from "../../components/ui/Button.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 
+const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function LoanOfficerLogin() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -20,8 +22,10 @@ export default function LoanOfficerLogin() {
   const errors = useMemo(() => {
     const e = {};
 
-    if (touched.identifier && !form.identifier.trim()) {
-      e.identifier = "Enter username";
+    if (touched.identifier) {
+      const v = form.identifier.trim();
+      if (!v) e.identifier = "Enter email";
+      else if (!emailRx.test(v)) e.identifier = "Enter a valid email";
     }
 
     if (touched.password && !form.password) {
@@ -69,8 +73,8 @@ export default function LoanOfficerLogin() {
         )}
 
         <Input
-          label="Officer Username"
-          placeholder="Enter username"
+          label="Officer Email"
+          placeholder="officer@email.com"
           value={form.identifier}
           onChange={(e) => {
             setForm((p) => ({ ...p, identifier: e.target.value }));
@@ -78,7 +82,7 @@ export default function LoanOfficerLogin() {
           }}
           onBlur={() => setTouched((t) => ({ ...t, identifier: true }))}
           error={errors.identifier}
-          autoComplete="username"
+          autoComplete="email"
         />
 
         <Input
@@ -105,13 +109,9 @@ export default function LoanOfficerLogin() {
         />
 
         <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-xs text-slate-600">
-            <input type="checkbox" className="h-4 w-4 rounded border-slate-300" />
-            Remember me
-          </label>
+         
 
           <Link to="/forgot-password" className="text-xs font-semibold text-emerald-700 hover:text-emerald-800">
-            Forgot password?
           </Link>
         </div>
 

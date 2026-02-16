@@ -1,5 +1,6 @@
 import axios from "axios";
-import { getToken } from "../utils/token.js";
+import { getToken, removeToken } from "../utils/token.js";
+import { normalizeAxiosError } from "../utils/errorMessage.js";
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
@@ -11,3 +12,18 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    normalizeAxiosError(error);
+    const status = error?.response?.status;
+    if (status === 401) {
+      removeToken();
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.replace("/login");
+      }
+    }
+    return Promise.reject(error);
+  }
+);

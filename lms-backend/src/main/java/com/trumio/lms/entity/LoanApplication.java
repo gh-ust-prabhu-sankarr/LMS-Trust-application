@@ -30,6 +30,8 @@ public class LoanApplication {
     @Indexed
     private String loanProductId;
 
+    private String loanProductName;
+
     private Double requestedAmount;
 
     private Double approvedAmount;
@@ -52,6 +54,12 @@ public class LoanApplication {
     private LocalDateTime approvedAt;
 
     private LocalDateTime disbursedAt;
+
+    private Boolean agreementAccepted;
+
+    private String agreementAcceptedName;
+
+    private LocalDateTime agreementAcceptedAt;
 
     private List<String> documents;
 

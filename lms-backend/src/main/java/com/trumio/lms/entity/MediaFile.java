@@ -22,6 +22,8 @@ public class MediaFile {
 
     private String fileName;
 
+    private String displayName;
+
     private String fileType;
 
     private Long fileSize;

@@ -23,16 +23,17 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.format.DateTimeParseException;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class KycService {
-    private static final int MIN_CREDIT_SCORE = 650;
-    private static final int MAX_CREDIT_SCORE = 900;
+    private static final DateTimeFormatter KYC_COOLDOWN_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
+    private static final int MAX_KYC_SUBMISSION_ATTEMPTS = 2; //submitlimit
+    private static final int KYC_COOLDOWN_MONTHS = 3; //monthhh
 
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
@@ -45,21 +46,21 @@ public class KycService {
             MultipartFile panDocument,
             MultipartFile aadhaarDocument) {
         User user = getCurrentUser();
-        Optional<Kyc> existingOpt = kycRepository.findByUserId(user.getId());
+        Optional<Kyc> existingOpt = kycRepository.findByUserId(user.getId());//optional to handle nullpointer
         Kyc existing = existingOpt.orElse(null);
 
         String pan = request.getPanNumber().trim().toUpperCase();
         String aadhaar = request.getAadhaarNumber().trim();
-
+//pancard validation... //no same ---numbers
         validatePanOwnership(pan, existing);
         validateAadhaarOwnership(aadhaar, existing);
-
+//age validation >18
         LocalDate parsedDob = parseDob(request.getDob());
         validateAge(parsedDob);
 
         Kyc saved;
         if (existing == null) {
-            Kyc kyc = Kyc.builder()
+            Kyc kyc = Kyc.builder() //to create new kyc record  from lombok
                     .userId(user.getId())
                     .fullName(request.getFullName().trim())
                     .dob(parsedDob)
@@ -74,8 +75,18 @@ public class KycService {
             saved = kycRepository.save(kyc);
         } else {
             int currentCount = existing.getSubmissionCount() == null ? 1 : existing.getSubmissionCount();
-            if (currentCount >= 2) {
-                throw new BusinessException(ErrorCode.KYC_ALREADY_SUBMITTED, "KYC can be submitted only 2 times");
+            LocalDateTime now = LocalDateTime.now();
+            if (currentCount >= MAX_KYC_SUBMISSION_ATTEMPTS) {
+                LocalDateTime lastSubmittedAt = existing.getSubmittedAt();
+                LocalDateTime nextEligibleAt = (lastSubmittedAt != null ? lastSubmittedAt : now).plusMonths(KYC_COOLDOWN_MONTHS);
+                if (now.isBefore(nextEligibleAt)) {
+                    throw new BusinessException(
+                            ErrorCode.KYC_ALREADY_SUBMITTED,
+                            "KYC resubmission is available after " + nextEligibleAt.toLocalDate().format(KYC_COOLDOWN_DATE_FMT)
+                    );
+                }
+                // Cooldown elapsed: start a fresh submission window.
+                currentCount = 0;
             }
             existing.setFullName(request.getFullName().trim());
             existing.setDob(parsedDob);
@@ -86,14 +97,14 @@ public class KycService {
             existing.setRemarks(null);
             existing.setReviewedBy(null);
             existing.setReviewedAt(null);
-            existing.setSubmittedAt(LocalDateTime.now());
-            existing.setUpdatedAt(LocalDateTime.now());
+            existing.setSubmittedAt(now);
+            existing.setUpdatedAt(now);
             saved = kycRepository.save(existing);
         }
 
         if (saved.getPanDocumentFileId() != null) {
             try {
-                mediaFileService.deleteFile(saved.getPanDocumentFileId(), user.getId());
+                mediaFileService.deleteFile(saved.getPanDocumentFileId(), user.getId());//delete old file if exist
             } catch (Exception ignored) {
             }
         }
@@ -124,7 +135,7 @@ public class KycService {
 
         auditService.log(user.getId(), "KYC_SUBMITTED", "KYC", saved.getId(), "KYC submitted by customer");
 
-        return ApiResponse.success("KYC submitted successfully", toResponse(saved));
+        return ApiResponse.success("KYC submitted successfully", toResponse(saved));//Convert a Kyc entity into a KycResponse DTO.
     }
 
     public KycResponse getMyKyc() {
@@ -133,7 +144,7 @@ public class KycService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "KYC not found"));
         return toResponse(kyc);
     }
-//for admin vieww ---pending/approved
+    //for admin vieww ---pending/approved
     public List<KycResponse> getByStatus(KYCStatus status) {
         return kycRepository.findByStatus(status).stream()
                 .map(this::toResponse)
@@ -162,12 +173,11 @@ public class KycService {
         targetUser.setKycStatus(saved.getStatus());
         targetUser.setUpdatedAt(LocalDateTime.now());
         userRepository.save(targetUser);
-
+//credit score  generation
         customerRepository.findByUserId(saved.getUserId()).ifPresent(customer -> {
             customer.setKycStatus(saved.getStatus());
             if (saved.getStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
-                int generatedScore = ThreadLocalRandom.current().nextInt(MIN_CREDIT_SCORE, MAX_CREDIT_SCORE + 1);
-                customer.setCreditScore(generatedScore);
+                customer.setCreditScore(650 + new java.util.Random().nextInt(251));
             }
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);

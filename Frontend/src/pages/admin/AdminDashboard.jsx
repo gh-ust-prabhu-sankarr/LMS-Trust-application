@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
 import { parseApplicationFields, parseCommaSeparated, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
+import { extractErrorMessage } from "../../utils/errorMessage.js";
 import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid } from "lucide-react";
 
 const initialProductForm = {
@@ -35,8 +36,16 @@ export default function AdminDashboard() {
   const [productForm, setProductForm] = useState(initialProductForm);
   const [officerForm, setOfficerForm] = useState(initialOfficerForm);
   const [processing, setProcessing] = useState(false);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
+  const [transactions, setTransactions] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [txCustomerPage, setTxCustomerPage] = useState(1);
+  const [txPage, setTxPage] = useState(1);
+  const [txSearch, setTxSearch] = useState("");
 
   const itemsPerPage = 4;
+  const txItemsPerPage = 6;
 
   const loadData = async () => {
     setLoading(true);
@@ -54,6 +63,63 @@ export default function AdminDashboard() {
     loadData();
   }, []);
 
+  const parseAuditAmount = (details) => {
+    const text = String(details || "");
+    const match = text.match(/repayment\s+of\s+([0-9]+(?:\.[0-9]+)?)/i);
+    if (!match) return null;
+    const n = Number(match[1]);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const loadTransactionsForCustomer = async (customer) => {
+    if (!customer?.id) return;
+    setTxLoading(true);
+    setTxError("");
+    try {
+      const res = await adminApi.getAuditByUser(customer.id);
+      const audits = unwrap(res) || res?.data || [];
+      const rows = audits
+        .filter((a) => {
+          const details = String(a?.details || "").toLowerCase();
+          const isRepayment = details.includes("repayment of");
+          const isCheckoutEvent = details.includes("checkout session");
+          return isRepayment && !isCheckoutEvent;
+        })
+        .map((a) => ({
+          id: `${customer?.id || "u"}-${a?.id || a?.timestamp || Math.random()}`,
+          amount: parseAuditAmount(a?.details),
+          details: a?.details || "-",
+          transactionRef: a?.entityId || "-",
+          timestamp: a?.timestamp || null,
+        }));
+
+      rows.sort((a, b) => {
+        const ta = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tb = b?.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return tb - ta;
+      });
+
+      setSelectedCustomer(customer);
+      setTransactions(rows);
+      setTxPage(1);
+    } catch (err) {
+      setTxError(err?.response?.data?.message || err?.message || "Failed to fetch transaction data.");
+      setTransactions([]);
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "TRANSACTIONS") return;
+    setTxError("");
+    setTransactions([]);
+    setSelectedCustomer(null);
+    setTxPage(1);
+    setTxCustomerPage(1);
+    setTxSearch("");
+  }, [activeTab]);
+
   const filteredUsers = useMemo(
     () =>
       users.filter(
@@ -66,13 +132,47 @@ export default function AdminDashboard() {
 
   const totalUserPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const paginatedUsers = filteredUsers.slice((userPage - 1) * itemsPerPage, userPage * itemsPerPage);
+  const customerUsers = useMemo(
+    () => users.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER"),
+    [users]
+  );
+  const filteredTxCustomers = useMemo(() => {
+    const q = txSearch.trim().toLowerCase();
+    if (!q) return customerUsers;
+    return customerUsers.filter((u) =>
+      String(u?.username || "").toLowerCase().includes(q) ||
+      String(u?.email || "").toLowerCase().includes(q)
+    );
+  }, [customerUsers, txSearch]);
+  const totalCustomerPages = Math.ceil(filteredTxCustomers.length / txItemsPerPage);
+  const paginatedCustomers = filteredTxCustomers.slice((txCustomerPage - 1) * txItemsPerPage, txCustomerPage * txItemsPerPage);
+  const totalTxPages = Math.ceil((transactions.length || 0) / txItemsPerPage);
+  const paginatedTransactions = useMemo(() => {
+    const start = (txPage - 1) * txItemsPerPage;
+    return transactions.slice(start, start + txItemsPerPage);
+  }, [transactions, txPage]);
+  const formatDateTime = (val) => (val ? new Date(val).toLocaleString("en-IN") : "-");
+  const money = (n) => {
+    const value = Number(n);
+    return Number.isFinite(value)
+      ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 })
+      : "-";
+  };
+
+  useEffect(() => {
+    setTxCustomerPage(1);
+  }, [txSearch]);
 
   const handleToggleUser = async (user) => {
+    if (String(user?.role || "").toUpperCase() === "ADMIN") {
+      alert("Admin accounts cannot be suspended.");
+      return;
+    }
     try {
       await adminApi.toggleUserStatus(user.id, !user.active);
       loadData();
-    } catch {
-      alert("Action failed");
+    } catch (err) {
+      alert(extractErrorMessage(err, "Unable to update user status."));
     }
   };
 
@@ -85,8 +185,8 @@ export default function AdminDashboard() {
       setActiveTab("DIRECTORY");
       loadData();
       alert("Staff account created.");
-    } catch {
-      alert("Failed to create officer.");
+    } catch (err) {
+      alert(extractErrorMessage(err, "Failed to create officer."));
     } finally {
       setProcessing(false);
     }
@@ -127,6 +227,8 @@ export default function AdminDashboard() {
 
       setProductForm(initialProductForm);
       alert("Product published successfully.");
+    } catch (err) {
+      alert(extractErrorMessage(err, "Failed to publish product."));
     } finally {
       setProcessing(false);
     }
@@ -146,6 +248,7 @@ export default function AdminDashboard() {
     <PortalShell title="Admin Command Center" subtitle="Manage system access and loan instrument deployment.">
       <div className="mb-10 flex space-x-1 rounded-2xl bg-slate-200/50 p-1.5 max-w-2xl mx-auto shadow-inner">
         <TabButton active={activeTab === "DIRECTORY"} onClick={() => setActiveTab("DIRECTORY")} icon={<LayoutGrid size={16} />} label="User Registry" />
+        <TabButton active={activeTab === "TRANSACTIONS"} onClick={() => setActiveTab("TRANSACTIONS")} icon={<Users size={16} />} label="Transactions" />
         <TabButton active={activeTab === "OFFICER"} onClick={() => setActiveTab("OFFICER")} icon={<UserPlus size={16} />} label="Add Officer" />
         <TabButton active={activeTab === "PRODUCT"} onClick={() => setActiveTab("PRODUCT")} icon={<PackagePlus size={16} />} label="Issue Product" />
       </div>
@@ -155,7 +258,7 @@ export default function AdminDashboard() {
           <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
             <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                <div className="h-10 w-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg">
                   <Users size={20} />
                 </div>
                 <h3 className="font-bold text-slate-900">System Registry</h3>
@@ -170,7 +273,7 @@ export default function AdminDashboard() {
                     setSearchTerm(e.target.value);
                     setUserPage(1);
                   }}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
                 />
               </div>
             </div>
@@ -189,7 +292,7 @@ export default function AdminDashboard() {
                     <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-8 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs uppercase ${u.role === "OFFICER" ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700"}`}>
+                          <div className="h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs uppercase bg-emerald-100 text-emerald-700">
                             {u.username[0]}
                           </div>
                           <div>
@@ -199,13 +302,24 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td className="px-8 py-4 text-center">
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${u.role === "OFFICER" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase bg-emerald-50 text-emerald-700">
                           {u.role}
                         </span>
                       </td>
                       <td className="px-8 py-4 text-right">
-                        <button onClick={() => handleToggleUser(u)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${u.active ? "border-rose-100 text-rose-500 hover:bg-rose-50" : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"}`}>
-                          {u.active ? "Suspend" : "Activate"}
+                        <button
+                          onClick={() => handleToggleUser(u)}
+                          disabled={String(u.role || "").toUpperCase() === "ADMIN"}
+                          title={String(u.role || "").toUpperCase() === "ADMIN" ? "Admin accounts cannot be suspended." : ""}
+                          className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                            String(u.role || "").toUpperCase() === "ADMIN"
+                              ? "border-slate-200 text-slate-400"
+                              : u.active
+                                ? "border-slate-300 text-slate-700 hover:bg-slate-100"
+                                : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"
+                          }`}
+                        >
+                          {String(u.role || "").toUpperCase() === "ADMIN" ? "Protected" : u.active ? "Suspend" : "Activate"}
                         </button>
                       </td>
                     </tr>
@@ -232,7 +346,7 @@ export default function AdminDashboard() {
           <div className="animate-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm max-w-xl mx-auto">
               <div className="mb-8 flex items-center gap-4">
-                <div className="h-14 w-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
+                <div className="h-14 w-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
                   <ShieldCheck size={32} />
                 </div>
                 <div>
@@ -244,7 +358,7 @@ export default function AdminDashboard() {
                 <Field label="Staff Username" placeholder="officer_01" value={officerForm.username} onChange={(v) => setOfficerForm((p) => ({ ...p, username: v }))} />
                 <Field label="Official Email" placeholder="staff@trumio.com" type="email" value={officerForm.email} onChange={(v) => setOfficerForm((p) => ({ ...p, email: v }))} />
                 <Field label="Temporary Password" type="password" value={officerForm.password} onChange={(v) => setOfficerForm((p) => ({ ...p, password: v }))} />
-                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-amber-600 transition-all">
+                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 transition-all">
                   Create Officer Account
                 </button>
               </form>
@@ -252,11 +366,157 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {activeTab === "TRANSACTIONS" && (
+          <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                  <Users size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">Customer Transactions</h3>
+                  <p className="text-xs text-slate-500">Only repayment entries made by customers.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => selectedCustomer && loadTransactionsForCustomer(selectedCustomer)}
+                disabled={txLoading || !selectedCustomer}
+                className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+              >
+                {txLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {txError && (
+              <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
+              <div className="lg:col-span-4 border-r border-slate-100">
+                <div className="px-6 py-4 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Customers
+                </div>
+                <div className="px-6 py-3 border-b border-slate-100">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      value={txSearch}
+                      onChange={(e) => setTxSearch(e.target.value)}
+                      placeholder="Search customer..."
+                      className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {paginatedCustomers.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => loadTransactionsForCustomer(u)}
+                      className={`w-full text-left px-6 py-4 transition-colors ${
+                        selectedCustomer?.id === u.id ? "bg-emerald-50" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="text-sm font-bold text-slate-800">{u.username}</div>
+                      <div className="text-[10px] text-slate-400">{u.email}</div>
+                    </button>
+                  ))}
+                  {!paginatedCustomers.length && (
+                    <div className="px-6 py-8 text-sm text-slate-500">No matching customers.</div>
+                  )}
+                </div>
+                {totalCustomerPages > 1 && (
+                  <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      Page {txCustomerPage} of {totalCustomerPages}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={txCustomerPage === 1}
+                        onClick={() => setTxCustomerPage((p) => p - 1)}
+                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button
+                        disabled={txCustomerPage >= totalCustomerPages}
+                        onClick={() => setTxCustomerPage((p) => p + 1)}
+                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="lg:col-span-8">
+                {!selectedCustomer ? (
+                  <div className="p-10 text-center text-sm text-slate-500">Select a customer to view transactions.</div>
+                ) : txLoading ? (
+                  <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
+                ) : transactions.length ? (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4">Date & Time</th>
+                            <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Transaction Ref</th>
+                            <th className="px-6 py-4">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginatedTransactions.map((tx) => (
+                            <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 text-sm text-slate-700">{formatDateTime(tx.timestamp)}</td>
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-800">{money(tx.amount)}</td>
+                              <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx.transactionRef}</td>
+                              <td className="px-6 py-4 text-xs text-slate-600">{tx.details}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {totalTxPages > 1 && (
+                      <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          Page {txPage} of {totalTxPages}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            disabled={txPage === 1}
+                            onClick={() => setTxPage((p) => p - 1)}
+                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button
+                            disabled={txPage >= totalTxPages}
+                            onClick={() => setTxPage((p) => p + 1)}
+                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="p-10 text-center text-sm text-slate-500">No repayment records found for this customer.</div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeTab === "PRODUCT" && (
           <div className="animate-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
               <div className="mb-8 flex items-center gap-4">
-                <div className="h-12 w-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                <div className="h-12 w-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
                   <PackagePlus size={24} />
                 </div>
                 <div>
@@ -285,7 +545,7 @@ export default function AdminDashboard() {
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Market Description</label>
                   <textarea
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 p-4 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/50 p-4 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
                     placeholder="Provide details about the loan purpose and target audience..."
                     rows={4}
                     value={productForm.description}
@@ -308,7 +568,7 @@ export default function AdminDashboard() {
                   onChange={(v) => setProductForm((p) => ({ ...p, applicationFields: v }))}
                 />
 
-                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-indigo-600 transition-all shadow-lg">
+                <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 transition-all shadow-lg">
                   {processing ? "Deploying..." : "Publish to Marketplace"}
                 </button>
               </form>
@@ -322,7 +582,7 @@ export default function AdminDashboard() {
 
 function TabButton({ active, onClick, icon, label }) {
   return (
-    <button onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? "bg-white text-indigo-600 shadow-md scale-105" : "text-slate-400 hover:text-slate-600"}`}>
+    <button onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? "bg-white text-emerald-700 shadow-md scale-105" : "text-slate-400 hover:text-slate-600"}`}>
       {icon} {label}
     </button>
   );
@@ -337,7 +597,7 @@ function Field({ label, value, onChange, placeholder, type = "text" }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
       />
     </div>
   );

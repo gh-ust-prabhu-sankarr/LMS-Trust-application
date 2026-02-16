@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, IndianRupee, ShieldCheck, Upload } from "lucide-react";
 import Navbar from "../../../components/navbar/Navbar.jsx";
+import BackgroundCanvas from "../../../components/layout/BackgroundCanvas.jsx";
 import { customerApi, fileApi, loanApi, productApi, unwrap } from "../../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../../utils/loanCatalog.js";
 
@@ -11,8 +12,7 @@ const toCurrency = (value) =>
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(value || 0);
-//addeddd
-//dwsad
+
 const toFieldInputType = (type = "text") => {
   if (type === "textarea") return "textarea";
   if (type === "number") return "number";
@@ -31,6 +31,7 @@ export default function LoanApplication() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({});
   const [documents, setDocuments] = useState({});
+  const [modal, setModal] = useState({ open: false, title: "Notice", message: "", onClose: null });
 
   useEffect(() => {
     const load = async () => {
@@ -59,7 +60,12 @@ export default function LoanApplication() {
     setDocuments({});
   }, [activeLoan?.slug, applicationFields]);
 
-  const { amount = activeLoan?.minAmount || 0, rate = activeLoan?.interestRate || 0, tenure = Math.max(1, Math.round((activeLoan?.minTenure || 12) / 12)), emi = 0 } = state || {};
+  const {
+    amount = activeLoan?.minAmount || 0,
+    rate = activeLoan?.interestRate || 0,
+    tenure = Math.max(1, Math.round((activeLoan?.minTenure || 12) / 12)),
+    emi = 0,
+  } = state || {};
 
   const onFieldChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -76,15 +82,25 @@ export default function LoanApplication() {
     return true;
   };
 
+  const showModal = (message, title = "Notice", onClose = null) => {
+    setModal({ open: true, title, message, onClose });
+  };
+
+  const closeModal = () => {
+    const callback = modal.onClose;
+    setModal({ open: false, title: "Notice", message: "", onClose: null });
+    if (typeof callback === "function") callback();
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
 
     if (!validateDocuments()) {
-      alert("Please upload all required documents.");
+      showModal("Please upload all required documents.");
       return;
     }
     if (!activeLoan?.id || String(activeLoan.id).startsWith("default-")) {
-      alert("Loan product is not configured in backend yet. Ask admin to create this product first.");
+      showModal("Loan product is not configured in backend yet. Ask admin to create this product first.");
       return;
     }
 
@@ -94,24 +110,14 @@ export default function LoanApplication() {
       const profile = unwrap(profileRes) || profileRes?.data;
       const kycStatus = String(profile?.kycStatus || "").toUpperCase();
       if (kycStatus !== "APPROVED" && kycStatus !== "VERIFIED") {
-        alert("Please verify KYC before applying for a loan.");
-        navigate("/app");
+        showModal("Please verify KYC before applying for a loan.", "KYC Required", () => navigate("/app"));
         return;
-      }
-
-      const loanTypeMap = {};
-      for (const field of applicationFields) {
-        loanTypeMap[field.key] = String(formData[field.key] ?? "");
       }
 
       const payload = {
         loanProductId: activeLoan.id,
         requestedAmount: Number(amount),
         tenure: Number(tenure) * 12,
-        emi: Math.max(1, Math.round(Number(emi) || 0)),
-        interest_Rate: Number(rate),
-        loan_type: loanTypeMap,
-        custEmail: profile?.email || formData.email || "",
       };
 
       const createRes = await loanApi.create(payload);
@@ -122,26 +128,28 @@ export default function LoanApplication() {
       }
 
       await Promise.all(
-        requiredDocuments.map((docName) => fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId))
+        requiredDocuments.map((docName) =>
+          fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId, docName)
+        )
       );
 
       await loanApi.submit(loanId);
-      alert(`${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`);
-      navigate("/app");
+      showModal(
+        `${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`,
+        "Success",
+        () => navigate("/app")
+      );
     } catch (err) {
-      alert(err?.response?.data?.message || err?.message || "Loan application failed.");
+      showModal(err?.response?.data?.message || err?.message || "Loan application failed.", "Application Failed");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <section className="relative min-h-screen w-full bg-[#F8FAFC] flex items-center justify-center p-6 pt-28">
+    <section className="relative min-h-screen w-full app-gradient-bg flex items-center justify-center p-6 pt-28 overflow-hidden">
       <Navbar />
-      <div
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
-        style={{ backgroundImage: "radial-gradient(#0F172A 1px, transparent 1px)", backgroundSize: "30px 30px" }}
-      />
+      <BackgroundCanvas />
 
       <div className="relative z-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-12">
         <div className="lg:col-span-7 flex flex-col justify-center">
@@ -223,9 +231,12 @@ export default function LoanApplication() {
                 <SummaryBox label="Tenure" value={`${tenure} Years`} />
               </div>
               <div className="flex justify-between items-center px-2">
-                <span className="text-xs text-slate-500 font-medium">Interest Rate</span>
+                <span className="text-xs text-slate-500 font-medium">Estimated Interest Rate</span>
                 <span className="text-xs font-bold text-slate-700">{rate}% p.a.</span>
               </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Final interest rate and EMI are fixed by backend using your credit score.
+              </p>
             </div>
 
             <div className="mt-10 pt-6 border-t border-slate-100">
@@ -236,6 +247,24 @@ export default function LoanApplication() {
           </div>
         </div>
       </div>
+
+      {modal.open ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">{modal.title}</h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">{modal.message}</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

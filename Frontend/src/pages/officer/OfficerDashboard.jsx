@@ -1,395 +1,959 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, kycApi, loanApi, unwrap, userApi } from "../../api/domainApi.js";
+import { adminApi, customerApi, kycApi, loanApi, unwrap, userApi, fileApi } from "../../api/domainApi.js";
+import { 
+  ChevronRight, ChevronLeft,
+  ClipboardCheck, UserCheck, AlertCircle, 
+  FileText, X, ExternalLink, Eye, CheckCircle2, Users, Search
+} from "lucide-react";
 
+// --- CONSTANTS ---
+const STATUS_TONE = {
+  PENDING: "bg-amber-50 text-amber-700 border-amber-200",
+  SUBMITTED: "bg-blue-50 text-blue-700 border-blue-200",
+  UNDER_REVIEW: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  REJECTED: "bg-rose-50 text-rose-700 border-rose-200",
+};
+
+const money = (n) => {
+  const value = Number(n);
+  return Number.isFinite(value)
+    ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })
+    : "INR 0";
+};
+
+const toArray = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.content)) return payload.content;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+};
+
+const ITEMS_PER_PAGE = 3;
+const TX_ITEMS_PER_PAGE = 6;
 const KYC_STATUSES = ["PENDING", "APPROVED", "REJECTED"];
 const LOAN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "APPROVED"];
 
+const getEntryTime = (item) => {
+  const keys = ["submittedAt", "createdAt", "appliedAt", "updatedAt", "createdDate", "createdOn"];
+  for (const key of keys) {
+    const value = item?.[key];
+    if (!value) continue;
+    const ts = new Date(value).getTime();
+    if (Number.isFinite(ts) && ts > 0) return ts;
+  }
+  return 0;
+};
+
+const sortByNewest = (a, b) => {
+  const timeDiff = getEntryTime(b) - getEntryTime(a);
+  if (timeDiff !== 0) return timeDiff;
+  const aIdNum = Number(a?.id);
+  const bIdNum = Number(b?.id);
+  if (Number.isFinite(aIdNum) && Number.isFinite(bIdNum)) return bIdNum - aIdNum;
+  return String(b?.id || "").localeCompare(String(a?.id || ""));
+};
+
 export default function OfficerDashboard() {
-  const DEFAULT_OFFICER_WALLET = 100000000;
-  // which KYC tab officer is viewing
-  const [kycStatus, setKycStatus] = useState("PENDING");
-
-  // all kyc records grouped by status
-  const [kycByStatus, setKycByStatus] = useState({});// { PENDING: [...], APPROVED: [...], REJECTED: [...]}
-
-  // loading + error handling
-  const [kycLoading, setKycLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  // remarks entered by officer (per kyc id)
-  const [kycRemarks, setKycRemarks] = useState({});
-  const [loanByStatus, setLoanByStatus] = useState({});
-  const [loanRemarks, setLoanRemarks] = useState({});
-  const [loanLoading, setLoanLoading] = useState(true);
-  const [officerWallet, setOfficerWallet] = useState(100000000);
+  const [activeTab, setActiveTab] = useState("kyc"); 
+  const [kycStatusFilter, setKycStatusFilter] = useState("PENDING");
+  const [kycByStatus, setKycByStatus] = useState({ PENDING: [], APPROVED: [], REJECTED: [] });
+  const [loanByStatus, setLoanByStatus] = useState({ SUBMITTED: [], UNDER_REVIEW: [], APPROVED: [] });
   const [customerById, setCustomerById] = useState({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  
+  // Modal States
+  const [selectedLoan, setSelectedLoan] = useState(null);
+  const [selectedKyc, setSelectedKyc] = useState(null);
+  const [kycPage, setKycPage] = useState(1);
+  const [loanPage, setLoanPage] = useState(1);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [loanActionError, setLoanActionError] = useState("");
+  const [loanActionSuccess, setLoanActionSuccess] = useState("");
+  const [approvedAmount, setApprovedAmount] = useState("");
+  const [approvalComments, setApprovalComments] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [loanDocs, setLoanDocs] = useState([]);
+  const [loanDocsLoading, setLoanDocsLoading] = useState(false);
+  const [txCustomers, setTxCustomers] = useState([]);
+  const [txCustomersLoading, setTxCustomersLoading] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
+  const [txCustomerPage, setTxCustomerPage] = useState(1);
+  const [txPage, setTxPage] = useState(1);
+  const [txSearch, setTxSearch] = useState("");
 
-
-  const kycRecords = kycByStatus[kycStatus] || [];  // current list shown one at a timeee
-  const loanRecords = LOAN_STATUSES.flatMap((s) => loanByStatus[s] || []);
-
-  // count shown on top cards  ;;;;;;pending 4 ....
-  const kycStatusCounts = useMemo(
-    () =>
-      KYC_STATUSES.reduce((acc, s) => {
-        acc[s] = (kycByStatus[s] || []).length;
-        return acc;
-      }, {}),
-    [kycByStatus]
-  );
-
-  // load all KYC records grouped by status
-  const loadKyc = async () => {
-    setKycLoading(true);
-    setError("");
-    try { //get all kyc --pending ///approved //////////..mapingg
-      const responses = await Promise.all(
-        KYC_STATUSES.map((status) => 
-          kycApi.getByStatus(status).then((res) => {   
-            const records = unwrap(res);
-            return [status, Array.isArray(records) ? records : []];//returing pening...kyc1 like thta
-          })
-        )
-      );
-
-      setKycByStatus(Object.fromEntries(responses));//key value pair for respones'''pending --keyc1 
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Failed to load KYC");
-    } finally {
-      setKycLoading(false);
-    }
-  };
-
-  const loadOfficerWallet = async () => {
+  const loadInitialData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError("");
     try {
-      const res = await userApi.getMe();
-      const data = unwrap(res);
-      if (data?.walletBalance != null) {
-        setOfficerWallet(data.walletBalance);
-      }
-    } catch {
-      // fallback to local default
-    }
-  };
+      const [kycResRaw, loanResRaw, userRes] = await Promise.all([
+        Promise.allSettled(KYC_STATUSES.map((s) => kycApi.getByStatus(s))),
+        Promise.allSettled(LOAN_STATUSES.map((s) => loanApi.getByStatus(s))),
+        userApi.getMe(),
+      ]);
 
-  const loadLoans = async () => {
-    setLoanLoading(true);
-    try {
-      const responses = await Promise.all(
-        LOAN_STATUSES.map((status) =>
-          loanApi.getByStatus(status).then((res) => {
-            const records = unwrap(res);
-            return [status, Array.isArray(records) ? records : []];
-          })
-        )
-      );
-      const byStatus = Object.fromEntries(responses);
-      setLoanByStatus(byStatus);
+      const kycData = {};
+      KYC_STATUSES.forEach((status, idx) => {
+        const result = kycResRaw[idx];
+        kycData[status] = result?.status === "fulfilled" ? toArray(unwrap(result.value)) : [];
+      });
 
-      const allLoans = LOAN_STATUSES.flatMap((s) => byStatus[s] || []);
-      const uniqueCustomerIds = Array.from(
-        new Set(allLoans.map((l) => l.customerId).filter(Boolean))
-      );
-      const missingIds = uniqueCustomerIds.filter((id) => !customerById[id]);
-      if (missingIds.length > 0) {
-        const results = await Promise.allSettled(
-          missingIds.map((id) => customerApi.getById(id))
-        );
-        setCustomerById((prev) => {
-          const next = { ...prev };
-          results.forEach((res, idx) => {
-            if (res.status === "fulfilled") {
-              next[missingIds[idx]] = unwrap(res.value);
-            }
-          });
-          return next;
+      const loanData = {};
+      LOAN_STATUSES.forEach((status, idx) => {
+        const result = loanResRaw[idx];
+        loanData[status] = result?.status === "fulfilled" ? toArray(unwrap(result.value)) : [];
+      });
+
+      setKycByStatus(kycData);
+      setLoanByStatus(loanData);
+      unwrap(userRes);
+
+      const allEntries = [...Object.values(kycData).flat(), ...Object.values(loanData).flat()];
+      const uIds = [
+        ...new Set(
+          allEntries
+            .map((item) => item?.customerId || item?.customer?.id)
+            .filter(Boolean)
+        ),
+      ];
+
+      if (uIds.length > 0) {
+        const custResults = await Promise.allSettled(uIds.map((id) => customerApi.getById(id)));
+        const custMap = {};
+        custResults.forEach((res, idx) => {
+          if (res.status === "fulfilled") custMap[uIds[idx]] = unwrap(res.value);
         });
+        setCustomerById(custMap);
+      } else {
+        setCustomerById({});
       }
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Failed to load loans");
+      setLoadError(err?.response?.data?.message || err?.message || "Failed to load dashboard data");
     } finally {
-      setLoanLoading(false);
+      setIsLoading(false);
     }
-  };
-
-  // load once when dashboard opens
-  useEffect(() => {
-    loadKyc();
-    loadLoans();
-    loadOfficerWallet();
   }, []);
 
-  // approve kyc
-  const approveKyc = async (kycId) => {
+  useEffect(() => { loadInitialData(); }, [loadInitialData]);
+  useEffect(() => { setKycPage(1); }, [kycStatusFilter]);
+
+  const kycRows = useMemo(
+    () => [...(kycByStatus[kycStatusFilter] || [])].sort(sortByNewest),
+    [kycByStatus, kycStatusFilter]
+  );
+  const loanRows = useMemo(
+    () => LOAN_STATUSES.flatMap((s) => loanByStatus[s] || []).sort(sortByNewest),
+    [loanByStatus]
+  );
+
+  const totalKycPages = Math.max(1, Math.ceil(kycRows.length / ITEMS_PER_PAGE));
+  const totalLoanPages = Math.max(1, Math.ceil(loanRows.length / ITEMS_PER_PAGE));
+
+  useEffect(() => {
+    if (kycPage > totalKycPages) setKycPage(totalKycPages);
+  }, [kycPage, totalKycPages]);
+  useEffect(() => {
+    if (loanPage > totalLoanPages) setLoanPage(totalLoanPages);
+  }, [loanPage, totalLoanPages]);
+
+  const pagedKycRows = useMemo(
+    () => kycRows.slice((kycPage - 1) * ITEMS_PER_PAGE, kycPage * ITEMS_PER_PAGE),
+    [kycRows, kycPage]
+  );
+  const pagedLoanRows = useMemo(
+    () => loanRows.slice((loanPage - 1) * ITEMS_PER_PAGE, loanPage * ITEMS_PER_PAGE),
+    [loanRows, loanPage]
+  );
+
+  const handleKycAction = async (id, action) => {
     try {
-      await kycApi.approve(
-        kycId,
-        (kycRemarks[kycId] || "").trim() || "Approved by loan officer"
-      );
-      setKycRemarks((prev) => ({ ...prev, [kycId]: "" }));
-      await loadKyc(); // refresh list
+      const remarks = `${action.toUpperCase()} processed by Loan Officer Console.`;
+      action === "approve" ? await kycApi.approve(id, remarks) : await kycApi.reject(id, remarks);
+      setSelectedKyc(null);
+      await loadInitialData(); // Refresh lists
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "KYC approve failed");
+      alert(err?.response?.data?.message || err?.message || "Authorization failed");
     }
   };
 
-  // reject kyc
-  const rejectKyc = async (kycId) => {
+  const handleOpenLoan = (loan) => {
+    setSelectedLoan(loan);
+    setLoanDocs([]);
+    setLoanActionError("");
+    setLoanActionSuccess("");
+    setApprovedAmount(String(loan?.requestedAmount || ""));
+    setApprovalComments("");
+    setRejectionReason("");
+  };
+
+  useEffect(() => {
+    if (!selectedLoan?.id) {
+      setLoanDocs([]);
+      return;
+    }
+
+    setLoanDocsLoading(true);
+    fileApi
+      .listByEntity("LOAN_APPLICATION", selectedLoan.id)
+      .then((res) => setLoanDocs(res?.data || []))
+      .catch(() => setLoanDocs([]))
+      .finally(() => setLoanDocsLoading(false));
+  }, [selectedLoan?.id]);
+
+  const withLoanAction = async (runner) => {
+    if (!selectedLoan?.id) return;
+    setActionBusy(true);
+    setLoanActionError("");
+    setLoanActionSuccess("");
     try {
-      await kycApi.reject(
-        kycId,
-        (kycRemarks[kycId] || "").trim() || "Rejected by loan officer"
-      );
-      setKycRemarks((prev) => ({ ...prev, [kycId]: "" }));
-      await loadKyc(); // refresh list
+      await runner();
+      setLoanActionSuccess("Action completed successfully.");
+      await loadInitialData();
+      setSelectedLoan(null);
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "KYC reject failed");
+      setLoanActionError(err?.response?.data?.message || err?.message || "Action failed");
+    } finally {
+      setActionBusy(false);
     }
   };
 
-  const handleFileDownload = async (fileId, fallbackName = "document.pdf") => {
-    try {
-      await fileApi.download(fileId, fallbackName);
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "File download failed");
+  const moveLoanToReview = () => withLoanAction(async () => {
+    await loanApi.moveToReview(selectedLoan.id);
+  });
+
+  const approveLoan = () => withLoanAction(async () => {
+    const amount = Number(approvedAmount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Enter a valid approved amount");
     }
+    // Backend allows approval only from UNDER_REVIEW; auto-transition when current state is SUBMITTED.
+    if (selectedLoan.status === "SUBMITTED") {
+      await loanApi.moveToReview(selectedLoan.id);
+    }
+    await loanApi.approve(selectedLoan.id, {
+      approvedAmount: amount,
+      comments: approvalComments || "Approved by loan officer",
+    });
+  });
+
+  const rejectLoan = () => withLoanAction(async () => {
+    const reason = rejectionReason.trim();
+    if (!reason) throw new Error("Enter rejection reason");
+    await loanApi.reject(selectedLoan.id, reason);
+  });
+
+  const parseAuditAmount = (details) => {
+    const text = String(details || "");
+    const match = text.match(/repayment\s+of\s+([0-9]+(?:\.[0-9]+)?)/i);
+    if (!match) return null;
+    const n = Number(match[1]);
+    return Number.isFinite(n) ? n : null;
   };
 
-  const approveLoan = async (loan) => {
+  const loadTransactionCustomers = useCallback(async () => {
+    setTxCustomersLoading(true);
+    setTxError("");
     try {
-      if (loan.status === "SUBMITTED") {
-        await loanApi.moveToReview(loan.id);
+      const res = await adminApi.getUsers();
+      const users = unwrap(res) || [];
+      setTxCustomers(users.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER"));
+    } catch (err) {
+      // Fallback to customers already visible in officer lists.
+      const fallback = Object.entries(customerById).map(([id, profile]) => ({
+        id,
+        username: profile?.username || profile?.fullName || "Customer",
+        email: profile?.email || "-",
+      }));
+      setTxCustomers(fallback);
+      if (!fallback.length) {
+        setTxError(err?.response?.data?.message || err?.message || "Failed to load customers.");
       }
-      await loanApi.approve(loan.id, {
-        approvedAmount: loan.requestedAmount,
-        comments: (loanRemarks[loan.id] || "").trim() || "Approved by loan officer",
+    } finally {
+      setTxCustomersLoading(false);
+    }
+  }, [customerById]);
+
+  const loadTransactionsForCustomer = async (customer) => {
+    if (!customer?.id) return;
+    setTxLoading(true);
+    setTxError("");
+    try {
+      const res = await adminApi.getAuditByUser(customer.id);
+      const audits = unwrap(res) || res?.data || [];
+      const rows = audits
+        .filter((a) => {
+          const details = String(a?.details || "").toLowerCase();
+          const isRepayment = details.includes("repayment of");
+          const isCheckout = details.includes("checkout session");
+          return isRepayment && !isCheckout;
+        })
+        .map((a) => ({
+          id: `${customer?.id || "u"}-${a?.id || a?.timestamp || Math.random()}`,
+          amount: parseAuditAmount(a?.details),
+          details: a?.details || "-",
+          transactionRef: a?.entityId || "-",
+          timestamp: a?.timestamp || null,
+        }));
+
+      rows.sort((a, b) => {
+        const ta = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tb = b?.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return tb - ta;
       });
-      setOfficerWallet((prev) => prev - Number(loan.requestedAmount || 0));
-      setLoanRemarks((prev) => ({ ...prev, [loan.id]: "" }));
-      await loadLoans();
-      await loadOfficerWallet();
+
+      setSelectedCustomer(customer);
+      setTransactions(rows);
+      setTxPage(1);
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Loan approval failed");
+      setTxError(err?.response?.data?.message || err?.message || "Failed to fetch transaction data.");
+      setTransactions([]);
+    } finally {
+      setTxLoading(false);
     }
   };
 
-  const rejectLoan = async (loan) => {
-    try {
-      if (loan.status === "SUBMITTED") {
-        await loanApi.moveToReview(loan.id);
-      }
-      await loanApi.reject(loan.id, (loanRemarks[loan.id] || "").trim() || "Rejected by loan officer");
-      setLoanRemarks((prev) => ({ ...prev, [loan.id]: "" }));
-      await loadLoans();
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Loan rejection failed");
-    }
-  };
+  useEffect(() => {
+    if (activeTab !== "transactions") return;
+    loadTransactionCustomers();
+    setSelectedCustomer(null);
+    setTransactions([]);
+    setTxPage(1);
+    setTxCustomerPage(1);
+    setTxSearch("");
+  }, [activeTab, loadTransactionCustomers]);
+
+  const filteredTxCustomers = useMemo(() => {
+    const q = txSearch.trim().toLowerCase();
+    if (!q) return txCustomers;
+    return txCustomers.filter((u) =>
+      String(u?.username || "").toLowerCase().includes(q) ||
+      String(u?.email || "").toLowerCase().includes(q)
+    );
+  }, [txCustomers, txSearch]);
+
+  const totalTxCustomerPages = Math.max(1, Math.ceil(filteredTxCustomers.length / TX_ITEMS_PER_PAGE));
+  const paginatedTxCustomers = useMemo(
+    () => filteredTxCustomers.slice((txCustomerPage - 1) * TX_ITEMS_PER_PAGE, txCustomerPage * TX_ITEMS_PER_PAGE),
+    [filteredTxCustomers, txCustomerPage]
+  );
+  const totalTxPages = Math.max(1, Math.ceil(transactions.length / TX_ITEMS_PER_PAGE));
+  const paginatedTransactions = useMemo(
+    () => transactions.slice((txPage - 1) * TX_ITEMS_PER_PAGE, txPage * TX_ITEMS_PER_PAGE),
+    [transactions, txPage]
+  );
+  const formatDateTime = (val) => (val ? new Date(val).toLocaleString("en-IN") : "-");
+
+  useEffect(() => {
+    setTxCustomerPage(1);
+  }, [txSearch]);
+
+
+  // --- UI ATOMS ---
+  const SidebarButton = ({ id, label, icon: Icon }) => (
+    <button
+      onClick={() => setActiveTab(id)}
+      className={`group flex items-center justify-between w-full px-5 py-4 rounded-2xl transition-all duration-500 border ${
+        activeTab === id 
+          ? "bg-slate-900 text-white shadow-xl translate-x-2 border-slate-800" 
+          : "text-slate-500 hover:bg-emerald-50 border-transparent hover:border-emerald-100"
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        {Icon ? React.createElement(Icon, { size: 18, className: activeTab === id ? "text-emerald-400" : "text-slate-400 group-hover:text-emerald-600" }) : null}
+        <span className="text-[10px] font-black uppercase tracking-[0.2em]">{label}</span>
+      </div>
+      <ChevronRight size={14} className={activeTab === id ? "opacity-100" : "opacity-0"} />
+    </button>
+  );
+
+  if (isLoading) return <PortalShell title="Loading...">Syncing Ledger...</PortalShell>;
 
   return (
-    <PortalShell title="Credit Officer Portal" subtitle="Review KYC requests">
-      {error && (
-        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
-      )}
- <div
-        className="absolute inset-0 opacity-[0.09] pointer-events-none"
-        style={{
-          backgroundImage: `linear-gradient(#0F172A 1px, transparent 1px), linear-gradient(90deg, #0F172A 1px, transparent 1px)`,
-          backgroundSize: '40px 40px'
-        }}
-      />
-      {/* KYC STATUS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {KYC_STATUSES.map((s) => (
-          <button
-            key={s}
-            onClick={() => setKycStatus(s)}
-            className={`rounded-2xl border p-4 text-left ${
-              kycStatus === s
-                ? "bg-slate-900 text-white border-slate-900"
-                : "bg-white border-slate-200"
-            }`}
-          >
-            <div className="text-[10px] font-bold uppercase tracking-widest">{s}</div>
-            <div className="text-2xl font-semibold mt-1">
-              {kycStatusCounts[s] ?? 0}
+    <PortalShell>
+      
+      {/* HEADER SECTION */}
+     
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        <aside className="lg:col-span-3 space-y-3 sticky top-28 h-fit">
+          <SidebarButton id="kyc" label="KYC Approval" icon={UserCheck} />
+          <SidebarButton id="loans" label="Loan Approval" icon={ClipboardCheck} />
+          <SidebarButton id="transactions" label="Transactions" icon={Users} />
+        </aside>
+
+        <main className="lg:col-span-9">
+          {loadError && (
+            <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+              {loadError}
             </div>
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5">
-        <div className="text-[10px] uppercase tracking-widest text-slate-500 font-black">Officer Wallet Balance</div>
-        <div className="text-2xl font-semibold mt-1">
-          {Number(officerWallet ?? DEFAULT_OFFICER_WALLET).toLocaleString("en-IN", {
-            style: "currency",
-            currency: "INR",
-            maximumFractionDigits: 0,
-          })}
-        </div>
-        <div className="mt-3">
-          <button
-            onClick={loadOfficerWallet}
-            className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest border rounded-2xl"
-          >
-            Refresh Wallet
-          </button>
-        </div>
-      </div>
-
-      {/* KYC LIST */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">
-            KYC Queue: {kycStatus}
-          </h2>
-          <button
-            onClick={loadKyc}
-            className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest border rounded-2xl b"
-          >
-            Refresh
-          </button>
-        </div>
-
-        {kycLoading ? (
-          <p className="text-sm text-slate-600">Loading KYC records...</p>
-        ) : kycRecords.length === 0 ? (
-          <p className="text-sm text-slate-500">No KYC records.</p>
-        ) : (
-          <div className="space-y-3">
-            {kycRecords.map((kyc) => (
-              <div key={kyc.id} className="rounded-xl border p-4">
-                <div className="flex justify-between gap-2">
-                  <div>
-                    <div className="font-semibold">{kyc.fullName}</div>
-                    <div className="text-xs text-slate-500">
-                      PAN: {kyc.panNumber} | Aadhaar: {kyc.aadhaarNumber}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Status: {kyc.status}
-                    </div>
-                    <div className="mt-2 flex gap-2">
-                      {kyc.panDocumentFileId ? (
-                        <button
-                          type="button"
-                          onClick={() => handleFileDownload(kyc.panDocumentFileId, "pan-document.pdf")}
-                          className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100"
+          )}
+          <AnimatePresence mode="wait">
+            
+            {/* KYC TAB */}
+            {activeTab === "kyc" && (
+              <div className="space-y-8">
+                <div className="flex gap-2 p-1.5 bg-white border border-slate-200 rounded-2xl w-fit shadow-sm">
+                    {KYC_STATUSES.map(s => (
+                        <button 
+                          key={s} 
+                          onClick={() => setKycStatusFilter(s)} 
+                          className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${kycStatusFilter === s ? 'bg-slate-900 text-white shadow-md border-slate-800' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-900'}`}
                         >
-                          PAN PDF
+                            {s} ({kycByStatus[s]?.length || 0})
                         </button>
-                      ) : null}
-                      {kyc.aadhaarDocumentFileId ? (
-                        <button
-                          type="button"
-                          onClick={() => handleFileDownload(kyc.aadhaarDocumentFileId, "aadhaar-document.pdf")}
-                          className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100"
-                        >
-                          Aadhaar PDF
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => approveKyc(kyc.id)}
-                      className="px-3 py-1 text-xs bg-emerald-600 text-white rounded"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => rejectKyc(kyc.id)}
-                      className="px-3 py-1 text-xs border border-rose-300 text-rose-700 rounded"
-                    >
-                      Reject
-                    </button>
-                  </div>
+                    ))}
                 </div>
 
-                <input
-                  value={kycRemarks[kyc.id] || ""}
-                  onChange={(e) =>
-                    setKycRemarks((p) => ({ ...p, [kyc.id]: e.target.value }))
-                  }
-                  placeholder="Officer remarks"
-                  className="mt-3 w-full rounded-lg border px-3 py-2 text-sm"
-                />
-                <div className="mt-2 text-xs text-slate-500">
-                  Current Remarks: {kyc.remarks || "-"}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 mt-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">Loan Queue</h2>
-          <button
-            onClick={loadLoans}
-            className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest border rounded-2xl"
-          >
-            Refresh
-          </button>
-        </div>
-        {loanLoading ? (
-          <p className="text-sm text-slate-600">Loading loans...</p>
-        ) : loanRecords.length === 0 ? (
-          <p className="text-sm text-slate-500">No pending loan requests.</p>
-        ) : (
-          <div className="space-y-3">
-            {loanRecords.map((loan) => (
-              <div key={loan.id} className="rounded-xl border p-4">
-                {(() => {
-                  const customer = customerById[loan.customerId];
-                  return (
-                    <div className="mb-3 text-xs text-slate-600">
-                      <div className="font-semibold text-slate-900">
-                        {customer?.fullName || "Customer"}
-                      </div>
-                      <div>
-                        Credit Score: {customer?.creditScore ?? "-"} | Phone: {customer?.phone || "-"} | Income: {Number(customer?.monthlyIncome || 0).toLocaleString("en-IN", {
-                          style: "currency",
-                          currency: "INR",
-                          maximumFractionDigits: 0,
-                        })}
+                <div className="rounded-[2.5rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        <th className="p-6">Applicant</th>
+                        <th className="p-6">Date of Birth</th>
+                        <th className="p-6">Status</th>
+                        <th className="p-6 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {kycRows.length > 0 ? (
+                        pagedKycRows.map((kyc) => (
+                          <tr
+                            key={kyc.id}
+                            className="hover:bg-emerald-50/30 transition-colors group cursor-pointer"
+                            onClick={() => setSelectedKyc(kyc)}
+                          >
+                            <td className="p-6">
+                              <p className="font-bold text-slate-900">{kyc.fullName || "Unknown"}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">ID: {kyc.id}</p>
+                            </td>
+                            <td className="p-6 text-sm font-bold text-slate-900">{kyc.dob || "N/A"}</td>
+                            <td className="p-6">
+                              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${STATUS_TONE[kyc.status]}`}>
+                                {kyc.status}
+                              </span>
+                            </td>
+                            <td className="p-6 text-right">
+                              <button className="p-3 bg-white border border-slate-200 rounded-xl group-hover:bg-slate-900 group-hover:text-white transition-all">
+                                <Eye size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="4" className="p-20 text-center">
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">
+                              No {kycStatusFilter} records found
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {kycRows.length > 0 ? (
+                    <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Page {kycPage} of {totalKycPages}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={kycPage === 1}
+                          onClick={() => setKycPage((p) => p - 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        {Array.from({ length: totalKycPages }, (_, idx) => idx + 1).map((p) => (
+                          <button
+                            key={p}
+                            onClick={() => setKycPage(p)}
+                            className={`min-w-8 h-8 px-2 rounded-lg border text-xs font-black transition-all ${
+                              kycPage === p
+                                ? "bg-slate-900 text-white border-slate-900"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                        <button
+                          disabled={kycPage >= totalKycPages}
+                          onClick={() => setKycPage((p) => p + 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
                       </div>
                     </div>
-                  );
-                })()}
-                <div className="flex justify-between items-start gap-3">
-                  <div>
-                    <div className="font-semibold">Loan #{loan.id?.slice(-8)}</div>
-                    <div className="text-xs text-slate-500">
-                      Requested: {Number(loan.requestedAmount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })}
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {/* LOANS TAB */}
+            {activeTab === "loans" && (
+              <div>
+                <div className="rounded-[2.5rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        <th className="p-6">Applicant</th>
+                        <th className="p-6">Capital Requested</th>
+                        <th className="p-6">Status</th>
+                        <th className="p-6 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {loanRows.length > 0 ? (
+                        pagedLoanRows.map(loan => (
+                          <tr key={loan.id} className="hover:bg-emerald-50/30 transition-colors group cursor-pointer" onClick={() => handleOpenLoan(loan)}>
+                            <td className="p-6">
+                              <p className="font-bold text-slate-900">{customerById[loan.customerId]?.fullName || "Retrieving Profile..."}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{loan.loanProductName}</p>
+                            </td>
+                            <td className="p-6 text-sm font-bold text-slate-900">{money(loan.requestedAmount)}</td>
+                            <td className="p-6">
+                              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${STATUS_TONE[loan.status]}`}>
+                                {loan.status}
+                              </span>
+                            </td>
+                            <td className="p-6 text-right">
+                              <button className="p-3 bg-white border border-slate-200 rounded-xl group-hover:bg-slate-900 group-hover:text-white transition-all">
+                                <Eye size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="4" className="p-20 text-center">
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">Pipeline is empty</p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {loanRows.length > 0 ? (
+                    <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Page {loanPage} of {totalLoanPages}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={loanPage === 1}
+                          onClick={() => setLoanPage((p) => p - 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        {Array.from({ length: totalLoanPages }, (_, idx) => idx + 1).map((p) => (
+                          <button
+                            key={p}
+                            onClick={() => setLoanPage(p)}
+                            className={`min-w-8 h-8 px-2 rounded-lg border text-xs font-black transition-all ${
+                              loanPage === p
+                                ? "bg-slate-900 text-white border-slate-900"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                        <button
+                          disabled={loanPage >= totalLoanPages}
+                          onClick={() => setLoanPage((p) => p + 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500">Tenure: {loan.tenure} months</div>
-                    <div className="text-xs text-slate-500">Status: {loan.status}</div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {/* TRANSACTIONS TAB */}
+            {activeTab === "transactions" && (
+              <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                      <Users size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900">Customer Transactions</h3>
+                      <p className="text-xs text-slate-500">Only repayment entries made by customers.</p>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => approveLoan(loan)} className="px-3 py-1 text-xs bg-emerald-600 text-white rounded">
-                      Approve
-                    </button>
-                    <button onClick={() => rejectLoan(loan)} className="px-3 py-1 text-xs border border-rose-300 text-rose-700 rounded">
-                      Reject
-                    </button>
+                  <button
+                    onClick={() => selectedCustomer && loadTransactionsForCustomer(selectedCustomer)}
+                    disabled={txLoading || !selectedCustomer}
+                    className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                  >
+                    {txLoading ? "Refreshing..." : "Refresh"}
+                  </button>
+                </div>
+
+                {txError && (
+                  <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
+                  <div className="lg:col-span-4 border-r border-slate-100">
+                    <div className="px-6 py-4 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Customers
+                    </div>
+                    <div className="px-6 py-3 border-b border-slate-100">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <input
+                          type="text"
+                          value={txSearch}
+                          onChange={(e) => setTxSearch(e.target.value)}
+                          placeholder="Search customer..."
+                          className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                        />
+                      </div>
+                    </div>
+                    {txCustomersLoading ? (
+                      <div className="px-6 py-8 text-sm text-slate-500">Loading customers...</div>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {paginatedTxCustomers.map((u) => (
+                          <button
+                            key={u.id}
+                            onClick={() => loadTransactionsForCustomer(u)}
+                            className={`w-full text-left px-6 py-4 transition-colors ${
+                              selectedCustomer?.id === u.id ? "bg-emerald-50" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="text-sm font-bold text-slate-800">{u.username}</div>
+                            <div className="text-[10px] text-slate-400">{u.email}</div>
+                          </button>
+                        ))}
+                        {!paginatedTxCustomers.length && (
+                          <div className="px-6 py-8 text-sm text-slate-500">No matching customers.</div>
+                        )}
+                      </div>
+                    )}
+                    {txCustomers.length > 0 && totalTxCustomerPages > 1 && (
+                      <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          Page {txCustomerPage} of {totalTxCustomerPages}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            disabled={txCustomerPage === 1}
+                            onClick={() => setTxCustomerPage((p) => p - 1)}
+                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button
+                            disabled={txCustomerPage >= totalTxCustomerPages}
+                            onClick={() => setTxCustomerPage((p) => p + 1)}
+                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="lg:col-span-8">
+                    {!selectedCustomer ? (
+                      <div className="p-10 text-center text-sm text-slate-500">Select a customer to view transactions.</div>
+                    ) : txLoading ? (
+                      <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
+                    ) : transactions.length ? (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left">
+                            <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                              <tr>
+                                <th className="px-6 py-4">Date & Time</th>
+                                <th className="px-6 py-4">Amount</th>
+                                <th className="px-6 py-4">Transaction Ref</th>
+                                <th className="px-6 py-4">Details</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {paginatedTransactions.map((tx) => (
+                                <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-6 py-4 text-sm text-slate-700">{formatDateTime(tx.timestamp)}</td>
+                                  <td className="px-6 py-4 text-sm font-semibold text-slate-800">
+                                    {Number(tx?.amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx.transactionRef}</td>
+                                  <td className="px-6 py-4 text-xs text-slate-600">{tx.details}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {totalTxPages > 1 && (
+                          <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              Page {txPage} of {totalTxPages}
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                disabled={txPage === 1}
+                                onClick={() => setTxPage((p) => p - 1)}
+                                className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                              >
+                                <ChevronLeft size={16} />
+                              </button>
+                              <button
+                                disabled={txPage >= totalTxPages}
+                                onClick={() => setTxPage((p) => p + 1)}
+                                className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                              >
+                                <ChevronRight size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="p-10 text-center text-sm text-slate-500">No repayment records found for this customer.</div>
+                    )}
                   </div>
                 </div>
-                <input
-                  value={loanRemarks[loan.id] || ""}
-                  onChange={(e) => setLoanRemarks((p) => ({ ...p, [loan.id]: e.target.value }))}
-                  placeholder="Loan remarks"
-                  className="mt-3 w-full rounded-lg border px-3 py-2 text-sm"
-                />
-              </div>
-            ))}
+              </section>
+            )}
+
+          </AnimatePresence>
+        </main>
+      </div>
+
+      {/* KYC DETAIL MODAL */}
+      <AnimatePresence>
+        {selectedKyc && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+            <div className="bg-white rounded-[3rem] shadow-2xl max-w-5xl w-full h-[85vh] border border-slate-200 flex flex-col overflow-hidden">
+                <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div>
+                        <h3 className="text-2xl font-serif text-slate-900">KYC Details</h3>
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Application ID: {selectedKyc.id}</p>
+                    </div>
+                    <button onClick={() => setSelectedKyc(null)} className="w-12 h-12 rounded-full bg-white border border-slate-200 flex items-center justify-center hover:bg-rose-50 shadow-sm transition-all"><X size={20}/></button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-10 grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    <div className="space-y-8">
+                        <div className="grid grid-cols-2 gap-4">
+                            <ModalInfo label="Full Name" value={selectedKyc.fullName} />
+                            <ModalInfo label="Date of Birth" value={selectedKyc.dob} />
+                            <ModalInfo label="PAN Number" value={selectedKyc.panNumber} />
+                            <ModalInfo label="Aadhaar" value={selectedKyc.aadhaarNumber} />
+                        </div>
+                        
+                        <div className="p-6 bg-emerald-50 rounded-[2rem] border border-emerald-100 flex items-start gap-4">
+                            <AlertCircle className="text-emerald-600 mt-1 shrink-0" size={18}/>
+                            <p className="text-xs text-emerald-800 leading-relaxed font-medium">Verify that the documents match the encrypted text data. Cross-reference Tax IDs before authorization.</p>
+                        </div>
+
+                        {selectedKyc.status === "PENDING" && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <button onClick={() => handleKycAction(selectedKyc.id, "approve")} className="py-5 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-emerald-500 hover:bg-emerald-700 transition-all">Approve</button>
+                                <button onClick={() => handleKycAction(selectedKyc.id, "reject")} className="py-5 bg-white text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-rose-200 hover:bg-rose-50 transition-all">Reject</button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="space-y-6">
+                        <DocumentAction label="PAN Card Document" fileId={selectedKyc.panDocumentFileId} fileName="PAN_DOC.pdf" />
+                        <DocumentAction label="Aadhaar Card Document" fileId={selectedKyc.aadhaarDocumentFileId} fileName="AADHAAR_DOC.pdf" />
+                    </div>
+                </div>
+            </div>
           </div>
         )}
-      </section>
+      </AnimatePresence>
+
+      {/* LOAN DETAIL MODAL */}
+      <AnimatePresence>
+        {selectedLoan && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+            <div className="bg-white rounded-[3rem] shadow-2xl max-w-5xl w-full h-[85vh] border border-slate-200 flex flex-col overflow-hidden">
+                <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div>
+                        <h3 className="text-2xl font-serif text-slate-900">Loan Details: {selectedLoan.loanProductName}</h3>
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Reference ID: {selectedLoan.id}</p>
+                    </div>
+                    <button onClick={() => setSelectedLoan(null)} className="w-12 h-12 rounded-full bg-white border border-slate-200 flex items-center justify-center hover:bg-rose-50 shadow-sm transition-all"><X size={20}/></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-10 grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    <div className="space-y-8">
+                        <div className="grid grid-cols-2 gap-4">
+                            <ModalInfo label="Applicant" value={customerById[selectedLoan.customerId]?.fullName || "Unknown"} />
+                            <ModalInfo label="Requested Capital" value={money(selectedLoan.requestedAmount)} />
+                            <ModalInfo label="Monthly Yield" value={money(customerById[selectedLoan.customerId]?.monthlyIncome)} />
+                            <ModalInfo label="CIBIL Index" value={customerById[selectedLoan.customerId]?.creditScore || "N/A"} />
+                        </div>
+
+                        <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Audit Memo</p>
+                             <p className="text-sm text-slate-700 leading-relaxed font-medium italic">"System-generated risk assessment: Based on credit index and income statements, applicant shows stable repayment capacity."</p>
+                        </div>
+                        
+                        {loanActionError && (
+                          <p className="text-sm font-semibold text-rose-600">{loanActionError}</p>
+                        )}
+                        {loanActionSuccess && (
+                          <p className="text-sm font-semibold text-emerald-700">{loanActionSuccess}</p>
+                        )}
+
+                        {selectedLoan.status === "SUBMITTED" && (
+                          <div className="flex flex-col gap-3">
+                            <button
+                              disabled={actionBusy}
+                              onClick={moveLoanToReview}
+                              className="w-full py-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-slate-800 hover:bg-emerald-800 transition-all disabled:opacity-60"
+                            >
+                              {actionBusy ? "Processing..." : "Move To Review"}
+                            </button>
+                          </div>
+                        )}
+
+                        {["SUBMITTED", "UNDER_REVIEW"].includes(selectedLoan.status) && (
+                          <div className="space-y-3">
+                            <input
+                              type="number"
+                              min="1"
+                              value={approvedAmount}
+                              onChange={(e) => setApprovedAmount(e.target.value)}
+                              placeholder="Approved amount"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                            />
+                            <input
+                              value={approvalComments}
+                              onChange={(e) => setApprovalComments(e.target.value)}
+                              placeholder="Approval comments (optional)"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                            />
+                            <button
+                              disabled={actionBusy}
+                              onClick={approveLoan}
+                              className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-slate-800 hover:bg-emerald-800 transition-all disabled:opacity-60"
+                            >
+                              {actionBusy ? "Processing..." : (selectedLoan.status === "SUBMITTED" ? "Move + Approve Loan" : "Approve Loan")}
+                            </button>
+
+                            <input
+                              value={rejectionReason}
+                              onChange={(e) => setRejectionReason(e.target.value)}
+                              placeholder="Rejection reason"
+                              className="w-full rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                            />
+                            <button
+                              disabled={actionBusy}
+                              onClick={rejectLoan}
+                              className="w-full py-4 bg-white text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-rose-200 hover:bg-rose-50 transition-all disabled:opacity-60"
+                            >
+                              {actionBusy ? "Processing..." : "Reject Loan"}
+                            </button>
+                          </div>
+                        )}
+
+                        {selectedLoan.status === "APPROVED" && (
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700">
+                            Loan is approved. Disbursement is handled by admin.
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-3">
+                          <button onClick={() => setSelectedLoan(null)} className="w-full py-5 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] hover:text-rose-600 transition-colors">Close</button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-6">
+                        {loanDocsLoading ? (
+                          <div className="p-6 border border-slate-200 rounded-[2rem] bg-white text-sm text-slate-500">
+                            Loading documents...
+                          </div>
+                        ) : loanDocs.length ? (
+                          loanDocs.map((doc) => (
+                            <DocumentAction
+                              key={doc.id}
+                              label={doc.displayName || doc.fileName || "Loan Document"}
+                              fileId={doc.id}
+                              fileName={doc.fileName || "document.pdf"}
+                            />
+                          ))
+                        ) : (
+                          <div className="p-6 border border-slate-200 rounded-[2rem] bg-white text-sm text-slate-500">
+                            No loan documents uploaded.
+                          </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </PortalShell>
   );
 }
+
+// --- MODAL SUB-COMPONENTS ---
+function ModalInfo({ label, value }) {
+    return (
+        <div className="p-5 bg-slate-50 border border-slate-200 rounded-3xl">
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">{label}</p>
+            <p className="text-sm font-bold text-slate-900">{value || "N/A"}</p>
+        </div>
+    );
+}
+
+function DocumentAction({ label, fileId, fileName, placeholder = false }) {
+    const handleVerify = () => {
+        if (!fileId || placeholder) return;
+        const url = fileApi.downloadUrl(fileId);
+        window.open(url, "_blank", "noopener,noreferrer");
+    };
+
+    return (
+        <div className="p-6 border border-slate-200 rounded-[2rem] bg-white shadow-sm flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-emerald-400 border border-slate-700"><FileText size={20}/></div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-900">{label}</p>
+                </div>
+                {!placeholder && fileId && <CheckCircle2 size={18} className="text-emerald-500" />}
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+                <button 
+                    disabled={placeholder || !fileId}
+                    onClick={() => fileApi.download(fileId, fileName)}
+                    className="py-3 bg-slate-50 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 flex items-center justify-center gap-2 hover:bg-slate-900 hover:text-white transition-all disabled:opacity-30"
+                >
+                   <ExternalLink size={12}/> Download
+                </button>
+                <button 
+                    disabled={placeholder || !fileId}
+                    onClick={handleVerify}
+                    className="py-3 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 flex items-center justify-center gap-2 hover:border-emerald-400 transition-all disabled:opacity-30"
+                >
+                   <Eye size={12}/> Verify
+                </button>
+            </div>
+        </div>
+    );
+}
+
+
+
