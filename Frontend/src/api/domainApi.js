@@ -146,20 +146,24 @@ export const fileApi = {
     window.URL.revokeObjectURL(blobUrl);
   },
 
-  openInNewTab: async (fileId, targetWindow = null) => {
+  getPreviewSource: async (fileId) => {
     const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
     const disposition = res?.headers?.["content-disposition"] || "";
     const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
     const filenameMatch = disposition.match(/filename=\"?([^"]+)\"?/i);
-    const filename = (filenameMatch?.[1] || "").toLowerCase();
+    const fileName = filenameMatch?.[1] || "document";
     const inferredType =
       contentType && contentType !== "application/octet-stream"
         ? contentType
-        : filename.endsWith(".pdf")
+        : fileName.toLowerCase().endsWith(".pdf")
         ? "application/pdf"
         : "application/octet-stream";
-
     const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: inferredType }));
+    return { blobUrl, contentType: inferredType, fileName };
+  },
+
+  openInNewTab: async (fileId, targetWindow = null) => {
+    const { blobUrl } = await fileApi.getPreviewSource(fileId);
     if (targetWindow && !targetWindow.closed) {
       targetWindow.location.replace(blobUrl);
     } else {

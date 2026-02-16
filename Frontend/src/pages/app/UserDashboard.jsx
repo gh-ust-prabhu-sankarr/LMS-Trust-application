@@ -4,6 +4,7 @@ import PortalShell from "../../components/layout/PortalShell.jsx";
 import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
+import { getFriendlyError } from "../../utils/errorMessage.js";
 import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 import { 
   User, ShieldCheck, Landmark, ReceiptIndianRupee, ChevronRight, 
@@ -17,6 +18,16 @@ const money = (n) => {
   return Number.isFinite(value)
     ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })
     : "-";
+};
+
+const annualFromMonthly = (monthly) => {
+  const value = Number(monthly);
+  return Number.isFinite(value) ? value * 12 : "";
+};
+
+const monthlyFromAnnual = (annual) => {
+  const value = Number(annual);
+  return Number.isFinite(value) ? value / 12 : NaN;
 };
 
 const KYC_META = {
@@ -75,7 +86,7 @@ export default function UserDashboard() {
     panNumber: "",
     address: "",
     employmentType: "",
-    monthlyIncome: "",
+    annualIncome: "",
   });
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -122,7 +133,7 @@ export default function UserDashboard() {
         panNumber: p?.panNumber || "",
         address: p?.address || "",
         employmentType: p?.employmentType || "",
-        monthlyIncome: p?.monthlyIncome ?? "",
+        annualIncome: annualFromMonthly(p?.monthlyIncome),
       });
       const loans = lRes.data || [];
       setMyLoans(loans);
@@ -217,7 +228,7 @@ export default function UserDashboard() {
       panNumber: profile?.panNumber || "",
       address: profile?.address || "",
       employmentType: profile?.employmentType || "",
-      monthlyIncome: profile?.monthlyIncome ?? "",
+      annualIncome: annualFromMonthly(profile?.monthlyIncome),
     });
     setProfileError("");
     setProfileSuccess("");
@@ -234,7 +245,7 @@ export default function UserDashboard() {
       panNumber: profileForm.panNumber.trim().toUpperCase(),
       address: profileForm.address.trim(),
       employmentType: profileForm.employmentType.trim(),
-      monthlyIncome: Number(profileForm.monthlyIncome),
+      monthlyIncome: monthlyFromAnnual(profileForm.annualIncome),
     };
 
     if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType || !Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
@@ -253,7 +264,7 @@ export default function UserDashboard() {
         panNumber: updated?.panNumber || "",
         address: updated?.address || "",
         employmentType: updated?.employmentType || "",
-        monthlyIncome: updated?.monthlyIncome ?? "",
+        annualIncome: annualFromMonthly(updated?.monthlyIncome),
       });
       setProfileSuccess("Profile updated successfully.");
       setEditing(false);
@@ -317,7 +328,8 @@ export default function UserDashboard() {
       .catch(() => {});
   }, [activeLoanId, isScheduleFullyPaid]);
 
-  const handleFileDownload = (id, name) => fileApi.download(id, name).catch(() => alert("Download failed"));
+  const handleFileDownload = (id, name) =>
+    fileApi.download(id, name).catch((e) => alert(getFriendlyError(e, "Download failed")));
   const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
 
   const openAgreementModal = (loan) => {
@@ -413,7 +425,7 @@ export default function UserDashboard() {
       setPanFile(null);
       setAadhaarFile(null);
     } catch (e) {
-      setKycError(e?.response?.data?.message || e?.message || "KYC submission failed");
+      setKycError(getFriendlyError(e, "KYC submission failed"));
     } finally {
       setKycBusy(false);
     }
@@ -508,8 +520,8 @@ export default function UserDashboard() {
                       <Field label="Employment">
                         <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
-                      <Field label="Income">
-                        <input type="number" min="1" value={profileForm.monthlyIncome} onChange={(e) => handleProfileField("monthlyIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      <Field label="Annual Income">
+                        <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
                       <Field label="Address">
                         <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
@@ -522,7 +534,7 @@ export default function UserDashboard() {
                       <InfoBox label="Contact" value={profile?.phone} />
                       <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} />
                       <InfoBox label="Employment" value={profile?.employmentType} />
-                      <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
+                      <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
                       <InfoBox label="Address" value={profile?.address} />
                       <InfoBox label="CIBIL Score" value={profile?.creditScore} />
                     </div>

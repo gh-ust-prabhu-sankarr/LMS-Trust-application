@@ -7,7 +7,23 @@ export function getFriendlyError(error, fallback = "Something went wrong. Please
     return "Network issue. Please check your internet connection and try again.";
   }
 
+  if (lower.includes("aadhaar") && (lower.includes("mismatch") || lower.includes("not match"))) {
+    return "Aadhaar mismatch. Please verify the Aadhaar details and document.";
+  }
+  if (lower.includes("aadhar") && (lower.includes("mismatch") || lower.includes("not match"))) {
+    return "Aadhaar mismatch. Please verify the Aadhaar details and document.";
+  }
+
   if (status === 404) {
+    if (lower.includes("file")) {
+      return "Document not found. Please ask the customer to re-upload the file.";
+    }
+    if (lower.includes("aadhaar") || lower.includes("aadhar")) {
+      return "Aadhaar details not found. Please verify and submit again.";
+    }
+    if (lower.includes("pan")) {
+      return "PAN details not found. Please verify and submit again.";
+    }
     return "Requested service or account was not found.";
   }
 
@@ -33,6 +49,9 @@ export function getFriendlyError(error, fallback = "Something went wrong. Please
     return "OTP expired. Please request a new OTP.";
   }
   if (lower.includes("aadhaar")) {
+    return "Please enter a valid Aadhaar number.";
+  }
+  if (lower.includes("aadhar")) {
     return "Please enter a valid Aadhaar number.";
   }
   if (lower.includes("pan")) {
