@@ -22,6 +22,18 @@ const toFieldInputType = (type = "text") => {
   return "text";
 };
 
+const computeEstimatedEmi = (amount, annualRatePercent, tenureYears) => {
+  const principal = Number(amount);
+  const rate = Number(annualRatePercent);
+  const years = Number(tenureYears);
+  const months = Math.max(1, Math.round(years * 12));
+  if (!Number.isFinite(principal) || principal <= 0) return 0;
+  if (!Number.isFinite(rate) || rate <= 0) return principal / months;
+  const monthlyRate = rate / 12 / 100;
+  const factor = Math.pow(1 + monthlyRate, months);
+  return (principal * monthlyRate * factor) / (factor - 1);
+};
+
 export default function LoanApplication() {
   const navigate = useNavigate();
   const { slug = "" } = useParams();
@@ -31,6 +43,8 @@ export default function LoanApplication() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({});
   const [documents, setDocuments] = useState({});
+  const [requestedAmount, setRequestedAmount] = useState("");
+  const [tenureYears, setTenureYears] = useState("");
   const [modal, setModal] = useState({ open: false, title: "Notice", message: "", onClose: null });
 
   useEffect(() => {
@@ -47,7 +61,15 @@ export default function LoanApplication() {
   }, []);
 
   const activeLoan = useMemo(() => loans.find((loan) => loan.slug === slug) || loans[0], [loans, slug]);
-  const applicationFields = activeLoan?.applicationFields || [];
+  const applicationFields = useMemo(
+    () =>
+      (activeLoan?.applicationFields || []).filter((field) => {
+        const key = String(field?.key || "").toLowerCase();
+        const label = String(field?.label || "").toLowerCase();
+        return !key.includes("income") && !label.includes("income");
+      }),
+    [activeLoan?.applicationFields]
+  );
   const requiredDocuments = activeLoan?.requiredDocuments || activeLoan?.documents || [];
 
   useEffect(() => {
@@ -60,12 +82,21 @@ export default function LoanApplication() {
     setDocuments({});
   }, [activeLoan?.slug, applicationFields]);
 
-  const {
-    amount = activeLoan?.minAmount || 0,
-    rate = activeLoan?.interestRate || 0,
-    tenure = Math.max(1, Math.round((activeLoan?.minTenure || 12) / 12)),
-    emi = 0,
-  } = state || {};
+  const { amount: stateAmount = 0, rate = activeLoan?.interestRate || 0, tenure: stateTenure = 0 } = state || {};
+  const minTenureYears = Math.max(1, Math.ceil((activeLoan?.minTenure || 12) / 12));
+  const maxTenureYears = Math.max(minTenureYears, Math.floor((activeLoan?.maxTenure || 84) / 12));
+
+  useEffect(() => {
+    const initialAmount = Number(stateAmount) > 0 ? Number(stateAmount) : Number(activeLoan?.minAmount || 0);
+    const initialTenure = Number(stateTenure) > 0 ? Number(stateTenure) : minTenureYears;
+    setRequestedAmount(String(Math.round(initialAmount)));
+    setTenureYears(String(initialTenure));
+  }, [activeLoan?.slug, activeLoan?.minAmount, minTenureYears, stateAmount, stateTenure]);
+
+  const estimatedEmi = useMemo(
+    () => computeEstimatedEmi(requestedAmount, rate, tenureYears),
+    [requestedAmount, rate, tenureYears]
+  );
 
   const onFieldChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -104,6 +135,21 @@ export default function LoanApplication() {
       return;
     }
 
+    const numericAmount = Number(requestedAmount);
+    const numericTenureYears = Number(tenureYears);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      showModal("Enter a valid loan amount.");
+      return;
+    }
+    if (numericAmount < Number(activeLoan?.minAmount || 0) || numericAmount > Number(activeLoan?.maxAmount || Number.MAX_SAFE_INTEGER)) {
+      showModal(`Loan amount must be between ${toCurrency(activeLoan?.minAmount || 0)} and ${toCurrency(activeLoan?.maxAmount || 0)}.`);
+      return;
+    }
+    if (!Number.isFinite(numericTenureYears) || numericTenureYears < minTenureYears || numericTenureYears > maxTenureYears) {
+      showModal(`Tenure must be between ${minTenureYears} and ${maxTenureYears} years.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const profileRes = await customerApi.getMyProfile();
@@ -116,8 +162,8 @@ export default function LoanApplication() {
 
       const payload = {
         loanProductId: activeLoan.id,
-        requestedAmount: Number(amount),
-        tenure: Number(tenure) * 12,
+        requestedAmount: numericAmount,
+        tenure: Math.round(numericTenureYears * 12),
       };
 
       const createRes = await loanApi.create(payload);
@@ -166,6 +212,42 @@ export default function LoanApplication() {
           </header>
 
           <form onSubmit={onSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Requested Loan Amount</label>
+                <input
+                  name="requestedAmount"
+                  type="number"
+                  min={activeLoan?.minAmount || 0}
+                  max={activeLoan?.maxAmount || undefined}
+                  required
+                  value={requestedAmount}
+                  onChange={(e) => setRequestedAmount(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-4 py-3 text-slate-900 focus:border-slate-700 focus:ring-1 focus:ring-slate-700 outline-none transition-all"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Allowed: {toCurrency(activeLoan?.minAmount || 0)} to {toCurrency(activeLoan?.maxAmount || 0)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tenure (Years)</label>
+                <input
+                  name="tenureYears"
+                  type="number"
+                  min={minTenureYears}
+                  max={maxTenureYears}
+                  required
+                  value={tenureYears}
+                  onChange={(e) => setTenureYears(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-4 py-3 text-slate-900 focus:border-slate-700 focus:ring-1 focus:ring-slate-700 outline-none transition-all"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Allowed: {minTenureYears} to {maxTenureYears} years
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {applicationFields.map((field) => (
                 <DynamicField
@@ -225,17 +307,17 @@ export default function LoanApplication() {
             </div>
 
             <div className="space-y-6">
-              <SummaryRow label="Loan Amount" value={toCurrency(amount)} />
+              <SummaryRow label="Loan Amount" value={toCurrency(requestedAmount)} />
               <div className="grid grid-cols-2 gap-4">
-                <SummaryBox label="EMI" value={toCurrency(emi)} />
-                <SummaryBox label="Tenure" value={`${tenure} Years`} />
+                <SummaryBox label="EMI" value={toCurrency(estimatedEmi)} />
+                <SummaryBox label="Tenure" value={`${tenureYears || 0} Years`} />
               </div>
               <div className="flex justify-between items-center px-2">
                 <span className="text-xs text-slate-500 font-medium">Estimated Interest Rate</span>
                 <span className="text-xs font-bold text-slate-700">{rate}% p.a.</span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Final interest rate and EMI are fixed by backend using your credit score.
+                EMI calculator is for estimate only. Final terms are decided after verification.
               </p>
             </div>
 
