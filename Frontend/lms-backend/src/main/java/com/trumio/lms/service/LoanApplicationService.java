@@ -3,15 +3,18 @@ package com.trumio.lms.service;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.LoanApplicationRequest;
 import com.trumio.lms.entity.Customer;
+import com.trumio.lms.entity.EMISchedule;
 import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.LoanProduct;
 import com.trumio.lms.entity.User;
+import com.trumio.lms.entity.enums.EMIStatus;
 import com.trumio.lms.entity.enums.KYCStatus;
 import com.trumio.lms.entity.enums.LoanStatus;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
 import com.trumio.lms.repository.LoanApplicationRepository;
 import com.trumio.lms.repository.CustomerRepository;
+import com.trumio.lms.repository.EMIScheduleRepository;
 import com.trumio.lms.repository.UserRepository;
 import com.trumio.lms.util.EMICalculator;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +23,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Arrays;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +33,7 @@ public class LoanApplicationService {
     private final CustomerService customerService;
     private final LoanProductService loanProductService;
     private final CustomerRepository customerRepository;
+    private final EMIScheduleRepository emiScheduleRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
@@ -69,21 +73,52 @@ public class LoanApplicationService {
             throw new BusinessException(ErrorCode.INSUFFICIENT_CREDIT_SCORE);
         }
 
-        // Block same product if already applied (regardless of status)
-        // User can apply for each loan type only once
+        double fixedInterestRate = determineInterestRateByCreditScore(
+                customer.getCreditScore(),
+                product.getInterestRate()
+        );
+
+        // Allow re-apply only after previous same-product loan is completed/closed.
+        // Block if there is any in-flight or active application for the same product.
+        Set<LoanStatus> blockingStatuses = Set.of(
+                LoanStatus.DRAFT,
+                LoanStatus.SUBMITTED,
+                LoanStatus.UNDER_REVIEW,
+                LoanStatus.APPROVED,
+                LoanStatus.DISBURSED,
+                LoanStatus.ACTIVE
+        );
         List<LoanApplication> existingSameProduct = loanApplicationRepository
-                .findByCustomerIdAndLoanProductId(customer.getId(), product.getId());
-        if (!existingSameProduct.isEmpty()) {
-            throw new BusinessException(ErrorCode.LOAN_ALREADY_EXISTS, 
-                    "You have already applied for this loan type. Only one application per loan type is allowed.");
+                .findByCustomerIdAndLoanProductIdAndStatusIn(customer.getId(), product.getId(), blockingStatuses);
+        boolean hasBlockingLoan = existingSameProduct.stream()
+                .anyMatch(this::isStillBlockingAfterRepaymentCheck);
+        if (hasBlockingLoan) {
+            throw new BusinessException(ErrorCode.LOAN_ALREADY_EXISTS,
+                    "You already have an active application/loan for this loan type.");
         }
 
         // Calculate EMI
         double emi = EMICalculator.calculateEMI(
                 request.getRequestedAmount(),
-                product.getInterestRate(),
+                fixedInterestRate,
                 request.getTenure()
         );
+
+        if (customer.getMonthlyIncome() == null || customer.getMonthlyIncome() <= 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Monthly income must be available to apply for loan");
+        }
+
+        double maxAllowedEmi = customer.getMonthlyIncome() * 0.4;
+        if (emi > maxAllowedEmi) {
+            throw new BusinessException(
+                    ErrorCode.EMI_EXCEEDS_INCOME_LIMIT,
+                    String.format(
+                            "Application rejected: EMI %.2f exceeds 40%% of monthly income %.2f",
+                            emi,
+                            customer.getMonthlyIncome()
+                    )
+            );
+        }
 
         LoanApplication application = LoanApplication.builder()
                 .customerId(customer.getId())
@@ -91,9 +126,10 @@ public class LoanApplicationService {
                 .loanProductName(product.getName())
                 .requestedAmount(request.getRequestedAmount())
                 .tenure(request.getTenure())
-                .interestRate(product.getInterestRate())
+                .interestRate(fixedInterestRate)
                 .emi(emi)
                 .status(LoanStatus.DRAFT)
+                .agreementAccepted(false)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -152,6 +188,40 @@ public class LoanApplicationService {
         return enrichLoansWithProductNames(loans);
     }
 
+    public ApiResponse<LoanApplication> acceptLoanAgreement(String loanId, String acceptedName) {
+        Customer customer = customerService.getCurrentCustomer();
+        LoanApplication loan = getLoanById(loanId);
+
+        if (!loan.getCustomerId().equals(customer.getId())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+
+        if (loan.getStatus() != LoanStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Agreement can only be accepted after loan is approved");
+        }
+
+        String signer = acceptedName == null ? "" : acceptedName.trim();
+        if (signer.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Accepted name is required");
+        }
+
+        if (Boolean.TRUE.equals(loan.getAgreementAccepted())) {
+            return ApiResponse.success("Agreement already accepted", loan);
+        }
+
+        loan.setAgreementAccepted(true);
+        loan.setAgreementAcceptedName(signer);
+        loan.setAgreementAcceptedAt(LocalDateTime.now());
+        loan.setUpdatedAt(LocalDateTime.now());
+
+        LoanApplication saved = loanApplicationRepository.save(loan);
+        auditService.log(customer.getUserId(), "LOAN_AGREEMENT_ACCEPTED", "LOAN_APPLICATION",
+                saved.getId(), "Agreement accepted by: " + signer);
+
+        return ApiResponse.success("Loan agreement accepted successfully", saved);
+    }
+
     private List<LoanApplication> enrichLoansWithProductNames(List<LoanApplication> loans) {
         for (LoanApplication loan : loans) {
             enrichLoanWithProductName(loan);
@@ -171,5 +241,52 @@ public class LoanApplicationService {
                 }
             }
         }
+    }
+
+    private double determineInterestRateByCreditScore(Integer creditScore, Double baseRate) {
+        double adjustedRate = baseRate;
+
+        if (creditScore >= 800) {
+            adjustedRate = baseRate - 1.5;
+        } else if (creditScore >= 750) {
+            adjustedRate = baseRate - 1.0;
+        } else if (creditScore >= 700) {
+            adjustedRate = baseRate - 0.5;
+        } else if (creditScore >= 650) {
+            adjustedRate = baseRate;
+        } else if (creditScore >= 600) {
+            adjustedRate = baseRate + 1.0;
+        } else {
+            adjustedRate = baseRate + 2.0;
+        }
+
+        return Math.round(adjustedRate * 100.0) / 100.0;
+    }
+
+    private boolean isStillBlockingAfterRepaymentCheck(LoanApplication loan) {
+        LoanStatus status = loan.getStatus();
+        if (status == null) {
+            return true;
+        }
+
+        if (status != LoanStatus.APPROVED && status != LoanStatus.DISBURSED && status != LoanStatus.ACTIVE) {
+            return true;
+        }
+
+        EMISchedule schedule = emiScheduleRepository.findByLoanApplicationId(loan.getId()).orElse(null);
+        if (schedule == null || schedule.getInstallments() == null || schedule.getInstallments().isEmpty()) {
+            return true;
+        }
+
+        boolean allPaid = schedule.getInstallments().stream()
+                .allMatch(i -> i.getStatus() == EMIStatus.PAID);
+        if (!allPaid) {
+            return true;
+        }
+
+        loan.setStatus(LoanStatus.CLOSED);
+        loan.setUpdatedAt(LocalDateTime.now());
+        loanApplicationRepository.save(loan);
+        return false;
     }
 }

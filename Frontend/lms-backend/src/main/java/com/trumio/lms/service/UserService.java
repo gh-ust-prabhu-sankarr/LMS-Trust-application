@@ -100,9 +100,6 @@ public class UserService {
      */
     public ApiResponse<User> toggleUserStatus(String userId, boolean active) {
         User user = getUserById(userId);
-        if (user.getRole() == Role.ADMIN) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS, "Admin account status cannot be changed");
-        }
         user.setActive(active);
         user.setUpdatedAt(LocalDateTime.now());
 

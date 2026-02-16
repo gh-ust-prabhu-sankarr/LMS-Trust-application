@@ -1,34 +1,26 @@
 import { api } from "./axios.js";
-import { idempotentPost, idempotentPut } from "./idempotentApi.js";
 
 export const unwrap = (res) => res?.data?.data ?? res?.data;
 
 const shouldFallbackEndpoint = (err) => {
   const status = err?.response?.status;
-  const message = String(
-    err?.response?.data?.message || err?.message || "",
-  ).toLowerCase();
+  const message = String(err?.response?.data?.message || err?.message || "").toLowerCase();
   const missingEndpointMessage =
     message.includes("no static resource") ||
     message.includes("nohandlerfound") ||
     message.includes("not found");
 
-  return (
-    !status || status === 404 || status === 405 || missingEndpointMessage
-  );
+  return !status || status === 404 || status === 405 || missingEndpointMessage;
 };
 
 // ---------------- CUSTOMER API ----------------
 export const customerApi = {
-  createProfile: (payload) =>
-    idempotentPost("/customers/profile", payload, {
-      operationId: "customerCreateProfile",
-    }),
+  createProfile: (payload) => api.post("/customers/profile", payload),
   getMyProfile: () => api.get("/customers/profile"),
-  updateMyProfile: (payload) =>
-    idempotentPost("/customers/profile", payload, {
-      operationId: "customerUpdateProfile",
-    }),
+
+  // ✅ BACKEND HAS NO PUT -> use POST
+  updateMyProfile: (payload) => api.post("/customers/profile", payload),
+
   getById: (customerId) => api.get(`/customers/${customerId}`),
 };
 
@@ -43,13 +35,12 @@ export const kycApi = {
     formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
     formData.append("panDocument", panDocument);
     formData.append("aadhaarDocument", aadhaarDocument);
-    return idempotentPost("/kyc/submit", formData, {
-      operationId: "kycSubmit",
-      config: {
-        headers: { "Content-Type": "multipart/form-data" },
-      },
+
+    return api.post("/kyc/submit", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
   },
+
   getMyKyc: () => api.get("/kyc/me"),
 
   // Officer/Admin actions
@@ -58,46 +49,25 @@ export const kycApi = {
       return await api.get("/officer/kyc", { params: { status } });
     } catch (err) {
       if (!shouldFallbackEndpoint(err)) throw err;
-      // Fallback for environments still exposing admin KYC endpoint
       return api.get("/admin/kyc", { params: { status } });
     }
   },
+
   approve: async (kycId, remarks) => {
     try {
-      return await idempotentPost(`/officer/kyc/${kycId}/approve`, { remarks }, {
-        operationId: `kycApprove:${kycId}`,
-      });
+      return await api.post(`/officer/kyc/${kycId}/approve`, { remarks });
     } catch (err) {
       if (!shouldFallbackEndpoint(err)) throw err;
-      return idempotentPost(
-        `/admin/kyc/${kycId}/verify`,
-        {
-          status: "APPROVED",
-          remarks,
-        },
-        {
-          operationId: `kycVerifyApproved:${kycId}`,
-        },
-      );
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "APPROVED", remarks });
     }
   },
+
   reject: async (kycId, remarks) => {
     try {
-      return await idempotentPost(`/officer/kyc/${kycId}/reject`, { remarks }, {
-        operationId: `kycReject:${kycId}`,
-      });
+      return await api.post(`/officer/kyc/${kycId}/reject`, { remarks });
     } catch (err) {
       if (!shouldFallbackEndpoint(err)) throw err;
-      return idempotentPost(
-        `/admin/kyc/${kycId}/verify`,
-        {
-          status: "REJECTED",
-          remarks,
-        },
-        {
-          operationId: `kycVerifyRejected:${kycId}`,
-        },
-      );
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "REJECTED", remarks });
     }
   },
 };
@@ -106,81 +76,66 @@ export const kycApi = {
 export const productApi = {
   getAll: () => api.get("/products"),
   getById: (productId) => api.get(`/products/${productId}`),
-  create: (payload) =>
-    idempotentPost("/products", payload, {
-      operationId: "productCreate",
-    }),
+  create: (payload) => api.post("/products", payload),
 };
 
 // ---------------- LOAN API ----------------
 export const loanApi = {
-  create: (payload) =>
-    idempotentPost("/loans", payload, {
-      operationId: "loanCreate",
-    }),
-  submit: (loanId) =>
-    idempotentPost(`/loans/${loanId}/submit`, null, {
-      operationId: `loanSubmit:${loanId}`,
-    }),
+  create: (payload) => api.post("/loans", payload),
+  submit: (loanId) => api.post(`/loans/${loanId}/submit`),
+  acceptAgreement: (loanId, payload) => api.post(`/loans/${loanId}/agreement/accept`, payload),
   getMyLoans: () => api.get("/loans/my-loans"),
   getById: (loanId) => api.get(`/loans/${loanId}`),
   getByStatus: (status) => api.get(`/loans/status/${status}`),
-  moveToReview: (loanId) =>
-    idempotentPost(`/loans/${loanId}/review`, null, {
-      operationId: `loanReview:${loanId}`,
-    }),
-  approve: (loanId, payload) =>
-    idempotentPost(`/loans/${loanId}/approve`, payload, {
-      operationId: `loanApprove:${loanId}`,
-    }),
-  reject: (loanId, reason) =>
-    idempotentPost(`/loans/${loanId}/reject`, null, {
-      operationId: `loanReject:${loanId}`,
-      config: { params: { reason } },
-    }),
-  disburse: (loanId) =>
-    idempotentPost(`/loans/${loanId}/disburse`, null, {
-      operationId: `loanDisburse:${loanId}`,
-    }),
+  moveToReview: (loanId) => api.post(`/loans/${loanId}/review`),
+  approve: (loanId, payload) => api.post(`/loans/${loanId}/approve`, payload),
+  reject: (loanId, reason) => api.post(`/loans/${loanId}/reject`, null, { params: { reason } }),
+  disburse: (loanId) => api.post(`/loans/${loanId}/disburse`),
 };
 
 // ---------------- REPAYMENT API ----------------
 export const repaymentApi = {
-  makePayment: (payload) =>
-    idempotentPost("/repayments", payload, {
-      operationId: "repaymentMakePayment",
-    }),
+  // mock/manual payment (if you still want it)
+  makePayment: (payload) => api.post("/repayments", payload),
+
+  // ✅ Stripe checkout session
+  createStripeCheckoutSession: (payload) =>
+    api.post("/repayments/stripe/checkout-session", payload),
+
+  // ✅ FIXED: backend expects JSON body { sessionId }
+  confirmStripePayment: (sessionId) =>
+  api.post("/repayments/stripe/confirm", { sessionId }),
+
   getByLoan: (loanId) => api.get(`/repayments/loan/${loanId}`),
+  getAll: () => api.get("/repayments"),
   getSchedule: (loanId) => api.get(`/repayments/schedule/${loanId}`),
-  markMissed: (loanId) =>
-    idempotentPost(`/repayments/miss/${loanId}`, null, {
-      operationId: `repaymentMarkMissed:${loanId}`,
-    }),
+  markMissed: (loanId) => api.post(`/repayments/miss/${loanId}`),
 };
 
 // ---------------- FILE API ----------------
 export const fileApi = {
-  upload: (file, entityType, entityId) => {
+  upload: (file, entityType, entityId, displayName) => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("entityType", entityType);
     formData.append("entityId", entityId);
+    if (displayName) formData.append("displayName", displayName);
 
     return api.post("/files/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
-  listByEntity: (entityType, entityId) =>
-    api.get(`/files/entity/${entityType}/${entityId}`),
+
+  listByEntity: (entityType, entityId) => api.get(`/files/entity/${entityType}/${entityId}`),
   deleteFile: (fileId) => api.delete(`/files/${fileId}`),
   downloadUrl: (fileId) => `${api.defaults.baseURL}/files/download/${fileId}`,
+
   download: async (fileId, fallbackName = "document.pdf") => {
-    const res = await api.get(`/files/download/${fileId}`, {
-      responseType: "blob",
-    });
+    const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
     const disposition = res?.headers?.["content-disposition"] || "";
-    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const match = disposition.match(/filename=\"?([^"]+)\"?/i);
     const filename = match?.[1] || fallbackName;
+
     const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
     const a = document.createElement("a");
     a.href = blobUrl;
@@ -190,23 +145,41 @@ export const fileApi = {
     a.remove();
     window.URL.revokeObjectURL(blobUrl);
   },
+
+  getPreviewSource: async (fileId) => {
+    const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
+    const disposition = res?.headers?.["content-disposition"] || "";
+    const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
+    const filenameMatch = disposition.match(/filename=\"?([^"]+)\"?/i);
+    const fileName = filenameMatch?.[1] || "document";
+    const inferredType =
+      contentType && contentType !== "application/octet-stream"
+        ? contentType
+        : fileName.toLowerCase().endsWith(".pdf")
+        ? "application/pdf"
+        : "application/octet-stream";
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: inferredType }));
+    return { blobUrl, contentType: inferredType, fileName };
+  },
+
+  openInNewTab: async (fileId, targetWindow = null) => {
+    const { blobUrl } = await fileApi.getPreviewSource(fileId);
+    if (targetWindow && !targetWindow.closed) {
+      targetWindow.location.replace(blobUrl);
+    } else {
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    }
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+  },
 };
 
 // ---------------- ADMIN API ----------------
 export const adminApi = {
   getUsers: () => api.get("/admin/users"),
-  toggleUserStatus: (userId, active) =>
-    idempotentPut(`/admin/users/${userId}/status`, null, {
-      operationId: `adminToggleUserStatus:${userId}:${active}`,
-      config: { params: { active } },
-    }),
-  createOfficer: (payload) =>
-    idempotentPost("/admin/users/officer", payload, {
-      operationId: "adminCreateOfficer",
-    }),
+  toggleUserStatus: (userId, active) => api.put(`/admin/users/${userId}/status`, null, { params: { active } }),
+  createOfficer: (payload) => api.post("/admin/users/officer", payload),
   getAuditByUser: (userId) => api.get(`/admin/audit/user/${userId}`),
-  getAuditByEntity: (entityType, entityId) =>
-    api.get(`/admin/audit/entity/${entityType}/${entityId}`),
+  getAuditByEntity: (entityType, entityId) => api.get(`/admin/audit/entity/${entityType}/${entityId}`),
 };
 
 // ---------------- AUTH PROFILE API ----------------

@@ -10,7 +10,7 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
 
     // Authentication & Authorization
-    INVALID_CREDENTIALS("AUTH_001", "Invalid username or password", HttpStatus.UNAUTHORIZED),
+    INVALID_CREDENTIALS("AUTH_001", "Invalid email or password", HttpStatus.UNAUTHORIZED),
     USER_NOT_FOUND("AUTH_002", "User not found", HttpStatus.NOT_FOUND),
     USER_ALREADY_EXISTS("AUTH_003", "User already exists", HttpStatus.CONFLICT),
     INVALID_TOKEN("AUTH_004", "Invalid or expired token", HttpStatus.UNAUTHORIZED),
@@ -35,6 +35,7 @@ public enum ErrorCode {
     INSUFFICIENT_CREDIT_SCORE("LOAN_004", "Credit score below minimum requirement", HttpStatus.BAD_REQUEST),
     INVALID_STATE_TRANSITION("LOAN_005", "Invalid loan status transition", HttpStatus.BAD_REQUEST),
     LOAN_ALREADY_EXISTS("LOAN_006", "Active loan already exists", HttpStatus.CONFLICT),
+    EMI_EXCEEDS_INCOME_LIMIT("LOAN_007", "EMI exceeds 40% of monthly income", HttpStatus.BAD_REQUEST),
 
     // Repayment
     REPAYMENT_FAILED("PAY_001", "Payment processing failed", HttpStatus.BAD_REQUEST),
@@ -42,10 +43,16 @@ public enum ErrorCode {
     EMI_NOT_FOUND("PAY_003", "EMI installment not found", HttpStatus.NOT_FOUND),
     INSUFFICIENT_WALLET_BALANCE("PAY_004", "Insufficient wallet balance", HttpStatus.BAD_REQUEST),
 
+    // Stripe / Payment Gateway
+    STRIPE_API_ERROR("PAY_005", "Stripe payment processing error", HttpStatus.BAD_GATEWAY),
+    STRIPE_SESSION_NOT_FOUND("PAY_006", "Stripe session not found", HttpStatus.NOT_FOUND),
+    STRIPE_PAYMENT_NOT_COMPLETED("PAY_007", "Stripe payment not completed", HttpStatus.BAD_REQUEST),
+
     // Media
     FILE_UPLOAD_FAILED("FILE_001", "File upload failed", HttpStatus.INTERNAL_SERVER_ERROR),
     FILE_NOT_FOUND("FILE_002", "File not found", HttpStatus.NOT_FOUND),
     INVALID_FILE_TYPE("FILE_003", "Invalid file type", HttpStatus.BAD_REQUEST),
+
 
 
     //Idempotency

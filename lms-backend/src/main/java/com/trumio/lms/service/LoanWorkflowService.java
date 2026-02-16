@@ -15,12 +15,15 @@ package com.trumio.lms.service;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.LoanApprovalRequest;
 import com.trumio.lms.entity.Customer;
+import com.trumio.lms.entity.Kyc;
 import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.User;
+import com.trumio.lms.entity.enums.KYCStatus;
 import com.trumio.lms.entity.enums.LoanStatus;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
 import com.trumio.lms.exception.InvalidStateTransitionException;
+import com.trumio.lms.repository.KycRepository;
 import com.trumio.lms.repository.LoanApplicationRepository;
 import com.trumio.lms.repository.CustomerRepository;
 import com.trumio.lms.repository.UserRepository;
@@ -36,6 +39,7 @@ public class LoanWorkflowService {
     private final LoanApplicationRepository loanApplicationRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
+    private final KycRepository kycRepository;
     private final LoanProductService loanProductService;
     private final EMIService emiService;
     private final AuditService auditService;
@@ -49,7 +53,7 @@ public class LoanWorkflowService {
 
         LoanApplication saved = loanApplicationRepository.save(loan);
         auditService.log(getCurrentUserId(), "LOAN_UNDER_REVIEW", "LOAN_APPLICATION",
-                loan, saved, loanId, "Loan moved to review");
+                loanId, "Loan moved to review");
 
         return ApiResponse.success("Loan moved to review", saved);
     }
@@ -78,7 +82,7 @@ public class LoanWorkflowService {
             emiService.generateSchedule(saved);
         }
         auditService.log(getCurrentUserId(), "LOAN_APPROVED", "LOAN_APPLICATION",
-                request, saved, loanId, "Loan approved: " + request.getComments());
+                loanId, "Loan approved: " + request.getComments());
 
         return ApiResponse.success("Loan approved successfully", saved);
     }
@@ -86,17 +90,51 @@ public class LoanWorkflowService {
     public ApiResponse<LoanApplication> rejectLoan(String loanId, String reason) {
         LoanApplication loan = getLoan(loanId);
         validateTransition(loan.getStatus(), LoanStatus.REJECTED);
+        String officerId = getCurrentUserId();
+        LocalDateTime now = LocalDateTime.now();
 
         loan.setStatus(LoanStatus.REJECTED);
         loan.setRejectionReason(reason);
-        loan.setReviewedBy(getCurrentUserId());
-        loan.setUpdatedAt(LocalDateTime.now());
+        loan.setReviewedBy(officerId);
+        loan.setUpdatedAt(now);
 
         LoanApplication saved = loanApplicationRepository.save(loan);
-        auditService.log(getCurrentUserId(), "LOAN_REJECTED", "LOAN_APPLICATION",
-                reason, saved, loanId, "Loan rejected: " + reason);
+        markBorrowerKycRejected(saved, officerId, now, reason);
+
+        auditService.log(officerId, "LOAN_REJECTED", "LOAN_APPLICATION",
+                loanId, "Loan rejected: " + reason);
 
         return ApiResponse.success("Loan rejected", saved);
+    }
+
+    private void markBorrowerKycRejected(LoanApplication loan, String officerId, LocalDateTime now, String reason) {
+        customerRepository.findById(loan.getCustomerId()).ifPresent(customer -> {
+            String userId = customer.getUserId();
+            if (userId == null || userId.isBlank()) return;
+
+            kycRepository.findByUserId(userId).ifPresent(kyc -> {
+                kyc.setStatus(KYCStatus.REJECTED);
+                kyc.setRemarks("Rejected during loan review: " + reason);
+                kyc.setReviewedBy(officerId);
+                kyc.setReviewedAt(now);
+                kyc.setUpdatedAt(now);
+
+                Kyc savedKyc = kycRepository.save(kyc);
+
+                userRepository.findById(userId).ifPresent(user -> {
+                    user.setKycStatus(KYCStatus.REJECTED);
+                    user.setUpdatedAt(now);
+                    userRepository.save(user);
+                });
+
+                customer.setKycStatus(KYCStatus.REJECTED);
+                customer.setUpdatedAt(now);
+                customerRepository.save(customer);
+
+                auditService.log(officerId, "KYC_REJECTED", "KYC", savedKyc.getId(),
+                        "KYC rejected along with loan rejection");
+            });
+        });
     }
 
     public ApiResponse<LoanApplication> disburseLoan(String loanId) {
@@ -117,7 +155,7 @@ public class LoanWorkflowService {
         saved = loanApplicationRepository.save(saved);
 
         auditService.log(getCurrentUserId(), "LOAN_DISBURSED", "LOAN_APPLICATION",
-                loan, saved, loanId, "Loan disbursed and activated");
+                loanId, "Loan disbursed and activated");
 
         return ApiResponse.success("Loan disbursed successfully", saved);
     }

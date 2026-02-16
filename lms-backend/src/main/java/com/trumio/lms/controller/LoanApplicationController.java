@@ -3,6 +3,7 @@ package com.trumio.lms.controller;
 
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.LoanApplicationRequest;
+import com.trumio.lms.dto.LoanAgreementAcceptRequest;
 import com.trumio.lms.dto.LoanApprovalRequest;
 import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.enums.LoanStatus;
@@ -38,6 +39,14 @@ public class LoanApplicationController {
     @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> submitApplication(@PathVariable String loanId) {
         return ResponseEntity.ok(loanApplicationService.submitApplication(loanId));
+    }
+
+    @PostMapping("/{loanId}/agreement/accept")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<ApiResponse<LoanApplication>> acceptLoanAgreement(
+            @PathVariable String loanId,
+            @Valid @RequestBody LoanAgreementAcceptRequest request) {
+        return ResponseEntity.ok(loanApplicationService.acceptLoanAgreement(loanId, request.getAcceptedName()));
     }
 
     @GetMapping("/my-loans")

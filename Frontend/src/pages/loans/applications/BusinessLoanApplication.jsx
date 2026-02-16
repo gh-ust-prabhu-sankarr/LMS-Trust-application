@@ -45,7 +45,7 @@ export default function BusinessLoanApplication() {
   };
 
   return (
-    <section className="min-h-screen bg-slate-50 flex items-center justify-center px-6 pt-28">
+    <section className="min-h-screen app-gradient-bg flex items-center justify-center px-6 pt-28">
       <Navbar />
       <div className="w-full max-w-xl bg-white rounded-3xl shadow-xl border border-slate-200 p-8">
 

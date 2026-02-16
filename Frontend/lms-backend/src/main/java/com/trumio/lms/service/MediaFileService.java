@@ -113,13 +113,13 @@ public class MediaFileService {
      */
     public List<MediaFile> getFilesByEntity(String entityType, String entityId) {
         List<MediaFile> files = mediaFileRepository.findByEntityTypeAndEntityId(entityType, entityId);
-        
+
         // Ensure label-style display names are set for all files.
         for (int i = 0; i < files.size(); i++) {
             MediaFile file = files.get(i);
             file.setDisplayName(generateDisplayName(file, entityType, entityId, i));
         }
-        
+
         return files;
     }
 
@@ -139,16 +139,16 @@ public class MediaFileService {
 
         String fileName = file.getFileName();
         if (fileName == null) return "Document";
-        
+
         // If it's already a readable name (not UUID), return it
         if (!fileName.matches("^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}.*")) {
             return fileName;
         }
-        
+
         if ("KYC_DOCUMENT".equals(entityType)) {
             return index == 0 ? "PAN Document" : "Aadhaar Document";
         }
-        
+
         return "Document " + (index + 1);
     }
 

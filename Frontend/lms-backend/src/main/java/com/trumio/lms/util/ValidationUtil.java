@@ -89,17 +89,17 @@ public class ValidationUtil {
 
     /**
      * Validate monthly income for loan eligibility
-     * Rule: EMI should not exceed 50% of monthly income
+     * Rule: EMI should not exceed 40% of monthly income
      */
     public static void validateIncomeEligibility(Double emi, Double monthlyIncome) {
         if (monthlyIncome == null || monthlyIncome <= 0) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Invalid monthly income");
         }
 
-        double maxAllowedEMI = monthlyIncome * 0.5;
+        double maxAllowedEMI = monthlyIncome * 0.4;
         if (emi > maxAllowedEMI) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR,
-                    String.format("EMI %.2f exceeds 50%% of monthly income %.2f",
+                    String.format("EMI %.2f exceeds 40%% of monthly income %.2f",
                             emi, monthlyIncome));
         }
     }

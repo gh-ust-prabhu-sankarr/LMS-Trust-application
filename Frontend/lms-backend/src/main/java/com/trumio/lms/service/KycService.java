@@ -32,6 +32,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KycService {
     private static final DateTimeFormatter KYC_COOLDOWN_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
+    private static final int MAX_KYC_SUBMISSION_ATTEMPTS = 2;
+    private static final int KYC_COOLDOWN_MONTHS = 3;
 
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
@@ -74,9 +76,9 @@ public class KycService {
         } else {
             int currentCount = existing.getSubmissionCount() == null ? 1 : existing.getSubmissionCount();
             LocalDateTime now = LocalDateTime.now();
-            if (currentCount >= 2) {
+            if (currentCount >= MAX_KYC_SUBMISSION_ATTEMPTS) {
                 LocalDateTime lastSubmittedAt = existing.getSubmittedAt();
-                LocalDateTime nextEligibleAt = (lastSubmittedAt != null ? lastSubmittedAt : now).plusMonths(2);
+                LocalDateTime nextEligibleAt = (lastSubmittedAt != null ? lastSubmittedAt : now).plusMonths(KYC_COOLDOWN_MONTHS);
                 if (now.isBefore(nextEligibleAt)) {
                     throw new BusinessException(
                             ErrorCode.KYC_ALREADY_SUBMITTED,
@@ -142,7 +144,7 @@ public class KycService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "KYC not found"));
         return toResponse(kyc);
     }
-//for admin vieww ---pending/approved
+    //for admin vieww ---pending/approved
     public List<KycResponse> getByStatus(KYCStatus status) {
         return kycRepository.findByStatus(status).stream()
                 .map(this::toResponse)

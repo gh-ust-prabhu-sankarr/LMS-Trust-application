@@ -114,8 +114,8 @@ export const DEFAULT_LOANS = [
     requiredDocuments: ["PAN Card", "Address Proof", "Salary Slips", "Bank Statement"],
     applicationFields: [
       { key: "employer_name", label: "Employer Name", type: "text", required: true },
-      { key: "monthly_income", label: "Monthly Income", type: "number", required: true },
       { key: "employment_type", label: "Employment Type", type: "text", required: true },
+      { key: "work_experience_years", label: "Work Experience (Years)", type: "number", required: true },
     ],
     processSteps: ["Check", "Apply", "KYC", "Payout"],
     colorTheme: "emerald",

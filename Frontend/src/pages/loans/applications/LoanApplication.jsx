@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, IndianRupee, ShieldCheck, Upload } from "lucide-react";
+import { ArrowLeft, IndianRupee, ShieldCheck, Upload, FileText, CheckCircle2, AlertTriangle, XCircle, CloudUpload } from "lucide-react";
 import Navbar from "../../../components/navbar/Navbar.jsx";
+import BackgroundCanvas from "../../../components/layout/BackgroundCanvas.jsx";
 import { customerApi, fileApi, loanApi, productApi, unwrap } from "../../../api/domainApi.js";
 import { DEFAULT_LOANS, mergeLoansWithDefaults } from "../../../utils/loanCatalog.js";
+import { getFriendlyError } from "../../../utils/errorMessage.js";
 
 const toCurrency = (value) =>
   new Intl.NumberFormat("en-IN", {
@@ -11,8 +13,7 @@ const toCurrency = (value) =>
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(value || 0);
-//addeddd
-//dwsad
+
 const toFieldInputType = (type = "text") => {
   if (type === "textarea") return "textarea";
   if (type === "number") return "number";
@@ -20,6 +21,48 @@ const toFieldInputType = (type = "text") => {
   if (type === "email") return "email";
   if (type === "tel") return "tel";
   return "text";
+};
+
+const computeEstimatedEmi = (amount, annualRatePercent, tenureYears) => {
+  const principal = Number(amount);
+  const rate = Number(annualRatePercent);
+  const years = Number(tenureYears);
+  const months = Math.max(1, Math.round(years * 12));
+  if (!Number.isFinite(principal) || principal <= 0) return 0;
+  if (!Number.isFinite(rate) || rate <= 0) return principal / months;
+  const monthlyRate = rate / 12 / 100;
+  const factor = Math.pow(1 + monthlyRate, months);
+  return (principal * monthlyRate * factor) / (factor - 1);
+};
+
+const ALLOWED_DOC_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+const MAX_DOC_SIZE_BYTES = 10 * 1024 * 1024;
+
+const formatFileSize = (bytes) => {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+};
+
+const getLoanApplicationErrorMessage = (err) => {
+  const rawMessage = String(err?.response?.data?.message || err?.message || "").trim();
+  const lower = rawMessage.toLowerCase();
+
+  if (
+    lower.includes("emi") &&
+    lower.includes("40%") &&
+    lower.includes("monthly income")
+  ) {
+    return "Application rejected: your requested loan amount is too high for your current income eligibility. Please reduce the amount or increase tenure and try again.";
+  }
+
+  if (lower.includes("monthly income must be available")) {
+    return "Please update your income details in profile before applying for a loan.";
+  }
+
+  return getFriendlyError(err, "Loan application failed.");
 };
 
 export default function LoanApplication() {
@@ -31,6 +74,11 @@ export default function LoanApplication() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({});
   const [documents, setDocuments] = useState({});
+  const [documentErrors, setDocumentErrors] = useState({});
+  const [dragOverDoc, setDragOverDoc] = useState("");
+  const [requestedAmount, setRequestedAmount] = useState("");
+  const [tenureYears, setTenureYears] = useState("");
+  const [modal, setModal] = useState({ open: false, title: "Notice", message: "", onClose: null });
 
   useEffect(() => {
     const load = async () => {
@@ -46,7 +94,15 @@ export default function LoanApplication() {
   }, []);
 
   const activeLoan = useMemo(() => loans.find((loan) => loan.slug === slug) || loans[0], [loans, slug]);
-  const applicationFields = activeLoan?.applicationFields || [];
+  const applicationFields = useMemo(
+    () =>
+      (activeLoan?.applicationFields || []).filter((field) => {
+        const key = String(field?.key || "").toLowerCase();
+        const label = String(field?.label || "").toLowerCase();
+        return !key.includes("income") && !label.includes("income");
+      }),
+    [activeLoan?.applicationFields]
+  );
   const requiredDocuments = activeLoan?.requiredDocuments || activeLoan?.documents || [];
 
   useEffect(() => {
@@ -57,34 +113,114 @@ export default function LoanApplication() {
     }
     setFormData(initialForm);
     setDocuments({});
+    setDocumentErrors({});
+    setDragOverDoc("");
   }, [activeLoan?.slug, applicationFields]);
 
-  const { amount = activeLoan?.minAmount || 0, rate = activeLoan?.interestRate || 0, tenure = Math.max(1, Math.round((activeLoan?.minTenure || 12) / 12)), emi = 0 } = state || {};
+  const { amount: stateAmount = 0, rate = activeLoan?.interestRate || 0, tenure: stateTenure = 0 } = state || {};
+  const minTenureYears = Math.max(1, Math.ceil((activeLoan?.minTenure || 12) / 12));
+  const maxTenureYears = Math.max(minTenureYears, Math.floor((activeLoan?.maxTenure || 84) / 12));
+
+  useEffect(() => {
+    const initialAmount = Number(stateAmount) > 0 ? Number(stateAmount) : Number(activeLoan?.minAmount || 0);
+    const initialTenure = Number(stateTenure) > 0 ? Number(stateTenure) : minTenureYears;
+    setRequestedAmount(String(Math.round(initialAmount)));
+    setTenureYears(String(initialTenure));
+  }, [activeLoan?.slug, activeLoan?.minAmount, minTenureYears, stateAmount, stateTenure]);
+
+  const estimatedEmi = useMemo(
+    () => computeEstimatedEmi(requestedAmount, rate, tenureYears),
+    [requestedAmount, rate, tenureYears]
+  );
 
   const onFieldChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const onDocumentChange = (docName, file) => {
-    setDocuments((prev) => ({ ...prev, [docName]: file || null }));
+  const validateAndSetDocument = (docName, file) => {
+    if (!file) {
+      setDocuments((prev) => ({ ...prev, [docName]: null }));
+      setDocumentErrors((prev) => {
+        const next = { ...prev };
+        delete next[docName];
+        return next;
+      });
+      return;
+    }
+
+    if (!ALLOWED_DOC_TYPES.includes(file.type)) {
+      setDocuments((prev) => ({ ...prev, [docName]: null }));
+      setDocumentErrors((prev) => ({ ...prev, [docName]: "Only PDF, JPEG, and PNG files are allowed." }));
+      return;
+    }
+
+    if (file.size > MAX_DOC_SIZE_BYTES) {
+      setDocuments((prev) => ({ ...prev, [docName]: null }));
+      setDocumentErrors((prev) => ({ ...prev, [docName]: "File size exceeds maximum limit of 10MB." }));
+      return;
+    }
+
+    setDocuments((prev) => ({ ...prev, [docName]: file }));
+    setDocumentErrors((prev) => {
+      const next = { ...prev };
+      delete next[docName];
+      return next;
+    });
   };
 
   const validateDocuments = () => {
+    for (const doc of requiredDocuments) {
+      if (documentErrors[doc]) return false;
+    }
     for (const doc of requiredDocuments) {
       if (!documents[doc]) return false;
     }
     return true;
   };
 
+  const uploadedDocumentCount = useMemo(
+    () => requiredDocuments.filter((doc) => !!documents[doc]).length,
+    [requiredDocuments, documents]
+  );
+
+  const showModal = (message, title = "Notice", onClose = null) => {
+    setModal({ open: true, title, message, onClose });
+  };
+
+  const closeModal = () => {
+    const callback = modal.onClose;
+    setModal({ open: false, title: "Notice", message: "", onClose: null });
+    if (typeof callback === "function") callback();
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
 
     if (!validateDocuments()) {
-      alert("Please upload all required documents.");
+      if (Object.keys(documentErrors).length > 0) {
+        showModal("Please fix document upload errors before submitting.");
+      } else {
+        showModal("Please upload all required documents.");
+      }
       return;
     }
     if (!activeLoan?.id || String(activeLoan.id).startsWith("default-")) {
-      alert("Loan product is not configured in backend yet. Ask admin to create this product first.");
+      showModal("Loan product is not configured in backend yet. Ask admin to create this product first.");
+      return;
+    }
+
+    const numericAmount = Number(requestedAmount);
+    const numericTenureYears = Number(tenureYears);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      showModal("Enter a valid loan amount.");
+      return;
+    }
+    if (numericAmount < Number(activeLoan?.minAmount || 0) || numericAmount > Number(activeLoan?.maxAmount || Number.MAX_SAFE_INTEGER)) {
+      showModal(`Loan amount must be between ${toCurrency(activeLoan?.minAmount || 0)} and ${toCurrency(activeLoan?.maxAmount || 0)}.`);
+      return;
+    }
+    if (!Number.isFinite(numericTenureYears) || numericTenureYears < minTenureYears || numericTenureYears > maxTenureYears) {
+      showModal(`Tenure must be between ${minTenureYears} and ${maxTenureYears} years.`);
       return;
     }
 
@@ -94,24 +230,14 @@ export default function LoanApplication() {
       const profile = unwrap(profileRes) || profileRes?.data;
       const kycStatus = String(profile?.kycStatus || "").toUpperCase();
       if (kycStatus !== "APPROVED" && kycStatus !== "VERIFIED") {
-        alert("Please verify KYC before applying for a loan.");
-        navigate("/app");
+        showModal("Please verify KYC before applying for a loan.", "KYC Required", () => navigate("/app"));
         return;
-      }
-
-      const loanTypeMap = {};
-      for (const field of applicationFields) {
-        loanTypeMap[field.key] = String(formData[field.key] ?? "");
       }
 
       const payload = {
         loanProductId: activeLoan.id,
-        requestedAmount: Number(amount),
-        tenure: Number(tenure) * 12,
-        emi: Math.max(1, Math.round(Number(emi) || 0)),
-        interest_Rate: Number(rate),
-        loan_type: loanTypeMap,
-        custEmail: profile?.email || formData.email || "",
+        requestedAmount: numericAmount,
+        tenure: Math.round(numericTenureYears * 12),
       };
 
       const createRes = await loanApi.create(payload);
@@ -122,26 +248,28 @@ export default function LoanApplication() {
       }
 
       await Promise.all(
-        requiredDocuments.map((docName) => fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId))
+        requiredDocuments.map((docName) =>
+          fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId, docName)
+        )
       );
 
       await loanApi.submit(loanId);
-      alert(`${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`);
-      navigate("/app");
+      showModal(
+        `${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`,
+        "Success",
+        () => navigate("/app")
+      );
     } catch (err) {
-      alert(err?.response?.data?.message || err?.message || "Loan application failed.");
+      showModal(getLoanApplicationErrorMessage(err), "Application Failed");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <section className="relative min-h-screen w-full bg-[#F8FAFC] flex items-center justify-center p-6 pt-28">
+    <section className="relative min-h-screen w-full app-gradient-bg flex items-center justify-center p-6 pt-28 overflow-hidden">
       <Navbar />
-      <div
-        className="absolute inset-0 opacity-[0.03] pointer-events-none"
-        style={{ backgroundImage: "radial-gradient(#0F172A 1px, transparent 1px)", backgroundSize: "30px 30px" }}
-      />
+      <BackgroundCanvas />
 
       <div className="relative z-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-12">
         <div className="lg:col-span-7 flex flex-col justify-center">
@@ -159,6 +287,42 @@ export default function LoanApplication() {
 
           <form onSubmit={onSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Requested Loan Amount</label>
+                <input
+                  name="requestedAmount"
+                  type="number"
+                  min={activeLoan?.minAmount || 0}
+                  max={activeLoan?.maxAmount || undefined}
+                  required
+                  value={requestedAmount}
+                  onChange={(e) => setRequestedAmount(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-4 py-3 text-slate-900 focus:border-slate-700 focus:ring-1 focus:ring-slate-700 outline-none transition-all"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Allowed: {toCurrency(activeLoan?.minAmount || 0)} to {toCurrency(activeLoan?.maxAmount || 0)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tenure (Years)</label>
+                <input
+                  name="tenureYears"
+                  type="number"
+                  min={minTenureYears}
+                  max={maxTenureYears}
+                  required
+                  value={tenureYears}
+                  onChange={(e) => setTenureYears(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-4 py-3 text-slate-900 focus:border-slate-700 focus:ring-1 focus:ring-slate-700 outline-none transition-all"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Allowed: {minTenureYears} to {maxTenureYears} years
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {applicationFields.map((field) => (
                 <DynamicField
                   key={field.key}
@@ -170,25 +334,128 @@ export default function LoanApplication() {
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Required Documents</h3>
-              <div className="space-y-3">
-                {requiredDocuments.map((docName) => (
-                  <label
-                    key={docName}
-                    className="flex flex-col gap-2 p-4 rounded-lg border border-slate-200 bg-white"
-                  >
-                    <span className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                      <Upload size={14} />
-                      {docName}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Required Documents</h3>
+                    <p className="mt-1 text-xs text-slate-500">Attach all files before submitting your application.</p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-700">
+                    <CloudUpload size={12} /> Cloud Upload
+                  </span>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-xs text-slate-600">
+                    {uploadedDocumentCount}/{requiredDocuments.length} documents attached
+                  </p>
+                  {uploadedDocumentCount === requiredDocuments.length ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                      <CheckCircle2 size={14} /> Ready to submit
                     </span>
-                    <input
-                      type="file"
-                      required
-                      onChange={(e) => onDocumentChange(docName, e.target.files?.[0] || null)}
-                      className="text-sm text-slate-600 file:mr-4 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-slate-700"
-                    />
-                  </label>
-                ))}
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                      <AlertTriangle size={14} /> Incomplete
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{
+                      width: `${requiredDocuments.length ? (uploadedDocumentCount / requiredDocuments.length) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {requiredDocuments.map((docName, idx) => {
+                  const inputId = `loan-doc-${idx}-${String(docName).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+                  return (
+                    <div
+                      key={docName}
+                      className={`rounded-xl border p-3 transition-all ${
+                        documentErrors[docName]
+                          ? "border-rose-300 bg-rose-50/40"
+                          : documents[docName]
+                          ? "border-emerald-200 bg-emerald-50/30"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-slate-800">{docName}</span>
+                        {documents[docName] ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                            <CheckCircle2 size={12} /> Attached
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <label
+                        htmlFor={inputId}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setDragOverDoc(docName);
+                        }}
+                        onDragLeave={() => setDragOverDoc((prev) => (prev === docName ? "" : prev))}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverDoc("");
+                          const droppedFile = e.dataTransfer?.files?.[0] || null;
+                          validateAndSetDocument(docName, droppedFile);
+                        }}
+                        className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-3 py-5 text-center transition-all ${
+                          dragOverDoc === docName
+                            ? "border-cyan-400 bg-cyan-50"
+                            : documentErrors[docName]
+                            ? "border-rose-300 bg-rose-50"
+                            : "border-slate-300 bg-slate-50 hover:border-slate-400"
+                        }`}
+                      >
+                        <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700">
+                          <CloudUpload size={18} />
+                        </div>
+                        <p className="text-xs font-semibold text-slate-800">Drag & drop file here</p>
+                        <p className="mt-1 text-[11px] text-slate-500">or click to browse</p>
+                        <span className="mt-3 inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1 text-[10px] font-semibold text-white">
+                          <Upload size={12} /> Browse File
+                        </span>
+                        <p className="mt-2 text-[10px] text-slate-500">PDF/JPG/PNG up to 10MB</p>
+                      </label>
+
+                      <input
+                        id={inputId}
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                        onChange={(e) => validateAndSetDocument(docName, e.target.files?.[0] || null)}
+                        className="hidden"
+                      />
+
+                      {documents[docName] ? (
+                        <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <div className="min-w-0 flex items-center gap-2 text-xs text-slate-700">
+                            <FileText size={14} className="shrink-0" />
+                            <span className="truncate font-semibold">{documents[docName].name}</span>
+                            <span className="shrink-0 text-slate-500">({formatFileSize(documents[docName].size)})</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => validateAndSetDocument(docName, null)}
+                            className="ml-3 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            <XCircle size={12} /> Remove
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {documentErrors[docName] ? (
+                        <p className="mt-2 text-xs font-semibold text-rose-600">{documentErrors[docName]}</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -217,15 +484,18 @@ export default function LoanApplication() {
             </div>
 
             <div className="space-y-6">
-              <SummaryRow label="Loan Amount" value={toCurrency(amount)} />
+              <SummaryRow label="Loan Amount" value={toCurrency(requestedAmount)} />
               <div className="grid grid-cols-2 gap-4">
-                <SummaryBox label="EMI" value={toCurrency(emi)} />
-                <SummaryBox label="Tenure" value={`${tenure} Years`} />
+                <SummaryBox label="EMI" value={toCurrency(estimatedEmi)} />
+                <SummaryBox label="Tenure" value={`${tenureYears || 0} Years`} />
               </div>
               <div className="flex justify-between items-center px-2">
-                <span className="text-xs text-slate-500 font-medium">Interest Rate</span>
+                <span className="text-xs text-slate-500 font-medium">Estimated Interest Rate</span>
                 <span className="text-xs font-bold text-slate-700">{rate}% p.a.</span>
               </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                EMI calculator is for estimate only. Final terms are decided after verification.
+              </p>
             </div>
 
             <div className="mt-10 pt-6 border-t border-slate-100">
@@ -236,6 +506,24 @@ export default function LoanApplication() {
           </div>
         </div>
       </div>
+
+      {modal.open ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">{modal.title}</h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">{modal.message}</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -291,5 +579,4 @@ function SummaryBox({ label, value }) {
     </div>
   );
 }
-
 

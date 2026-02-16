@@ -16,18 +16,19 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
     private final AuditService auditService;
     private final UserService userService;
 
     @GetMapping("/audit/user/{userId}")
+    @PreAuthorize("hasAnyRole('ADMIN','CREDIT_OFFICER')")
     public ResponseEntity<List<AuditLog>> getUserAuditLogs(@PathVariable String userId) {
         return ResponseEntity.ok(auditService.getAuditLogsByUser(userId));
     }
 
     @GetMapping("/audit/entity/{entityType}/{entityId}")
+    @PreAuthorize("hasAnyRole('ADMIN','CREDIT_OFFICER')")
     public ResponseEntity<List<AuditLog>> getEntityAuditLogs(
             @PathVariable String entityType,
             @PathVariable String entityId) {
@@ -35,6 +36,7 @@ public class AdminController {
     }
 
     @PostMapping("/users/officer")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<User>> createCreditOfficer(
             @RequestBody Map<String, String> request) {
         return ResponseEntity.ok(userService.createCreditOfficer(
@@ -45,11 +47,13 @@ public class AdminController {
     }
 
     @GetMapping("/users")
+    @PreAuthorize("hasAnyRole('ADMIN','CREDIT_OFFICER')")
     public ResponseEntity<List<User>> getAllUsers() {
         return ResponseEntity.ok(userService.getAllUsers());
     }
 
     @PutMapping("/users/{userId}/status")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<User>> toggleUserStatus(
             @PathVariable String userId,
             @RequestParam boolean active) {
