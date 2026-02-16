@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
 import { parseApplicationFields, parseCommaSeparated, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
-import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid } from "lucide-react";
+import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid, ScrollText } from "lucide-react";
 
 const initialProductForm = {
   name: "",
@@ -42,9 +42,15 @@ export default function AdminDashboard() {
   const [txCustomerPage, setTxCustomerPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
   const [txSearch, setTxSearch] = useState("");
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditFilters, setAuditFilters] = useState({ userId: "", entityType: "", entityId: "", limit: 50 });
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [auditPage, setAuditPage] = useState(1);
 
   const itemsPerPage = 4;
   const txItemsPerPage = 6;
+  const auditItemsPerPage = 8;
 
   const loadData = async () => {
     setLoading(true);
@@ -61,6 +67,11 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const userById = useMemo(
+    () => Object.fromEntries(users.map((u) => [u.id, u])),
+    [users]
+  );
 
   const parseAuditAmount = (details) => {
     const text = String(details || "");
@@ -109,6 +120,31 @@ export default function AdminDashboard() {
     }
   };
 
+  const loadAuditLogs = async (overrides = {}) => {
+    const params = { ...auditFilters, ...overrides };
+    const cleanParams = {
+      userId: params.userId || undefined,
+      entityType: params.entityType || undefined,
+      entityId: params.entityId || undefined,
+      limit: Number(params.limit) || 50,
+    };
+
+    setAuditFilters((prev) => ({ ...prev, ...params, limit: cleanParams.limit }));
+    setAuditLoading(true);
+    setAuditError("");
+    try {
+      const res = await adminApi.getAuditLogs(cleanParams);
+      const logs = unwrap(res) || res?.data || [];
+      setAuditLogs(logs);
+      setAuditPage(1);
+    } catch (err) {
+      setAuditError(err?.response?.data?.message || err?.message || "Failed to fetch audit logs.");
+      setAuditLogs([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab !== "TRANSACTIONS") return;
     setTxError("");
@@ -117,6 +153,11 @@ export default function AdminDashboard() {
     setTxPage(1);
     setTxCustomerPage(1);
     setTxSearch("");
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "AUDIT") return;
+    loadAuditLogs();
   }, [activeTab]);
 
   const filteredUsers = useMemo(
@@ -150,12 +191,23 @@ export default function AdminDashboard() {
     const start = (txPage - 1) * txItemsPerPage;
     return transactions.slice(start, start + txItemsPerPage);
   }, [transactions, txPage]);
+  const totalAuditPages = Math.ceil((auditLogs.length || 0) / auditItemsPerPage);
+  const paginatedAuditLogs = useMemo(() => {
+    const start = (auditPage - 1) * auditItemsPerPage;
+    return auditLogs.slice(start, start + auditItemsPerPage);
+  }, [auditLogs, auditPage, auditItemsPerPage]);
   const formatDateTime = (val) => (val ? new Date(val).toLocaleString("en-IN") : "-");
   const money = (n) => {
     const value = Number(n);
     return Number.isFinite(value)
       ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 })
       : "-";
+  };
+
+  const displayRole = (role) => {
+    const upper = String(role || "").toUpperCase();
+    if (upper === "CREDIT_OFFICER") return "LOAN_OFFICER";
+    return upper || "-";
   };
 
   useEffect(() => {
@@ -246,6 +298,7 @@ export default function AdminDashboard() {
       <div className="mb-10 flex space-x-1 rounded-2xl bg-slate-200/50 p-1.5 max-w-2xl mx-auto shadow-inner">
         <TabButton active={activeTab === "DIRECTORY"} onClick={() => setActiveTab("DIRECTORY")} icon={<LayoutGrid size={16} />} label="User Registry" />
         <TabButton active={activeTab === "TRANSACTIONS"} onClick={() => setActiveTab("TRANSACTIONS")} icon={<Users size={16} />} label="Transactions" />
+        <TabButton active={activeTab === "AUDIT"} onClick={() => setActiveTab("AUDIT")} icon={<ScrollText size={16} />} label="Audit Logs" />
         <TabButton active={activeTab === "OFFICER"} onClick={() => setActiveTab("OFFICER")} icon={<UserPlus size={16} />} label="Add Officer" />
         <TabButton active={activeTab === "PRODUCT"} onClick={() => setActiveTab("PRODUCT")} icon={<PackagePlus size={16} />} label="Issue Product" />
       </div>
@@ -300,7 +353,7 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-8 py-4 text-center">
                         <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase bg-emerald-50 text-emerald-700">
-                          {u.role}
+                          {displayRole(u.role)}
                         </span>
                       </td>
                       <td className="px-8 py-4 text-right">
@@ -339,6 +392,167 @@ export default function AdminDashboard() {
           </section>
         )}
 
+        {activeTab === "AUDIT" && (
+          <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-slate-900 rounded-xl flex items-center justify-center text-emerald-300 shadow-lg">
+                  <ScrollText size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">System Audit Trail</h3>
+                  <p className="text-xs text-slate-500">Inspect recent actions performed by any user.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => loadAuditLogs()}
+                disabled={auditLoading}
+                className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+              >
+                {auditLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {auditError && (
+              <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{auditError}</p>
+            )}
+
+            <div className="p-6 border-b border-slate-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">User</label>
+                <select
+                  value={auditFilters.userId}
+                  onChange={(e) => setAuditFilters((p) => ({ ...p, userId: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  <option value="">Any user</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.username} ({u.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Entity Type</label>
+                <input
+                  value={auditFilters.entityType}
+                  onChange={(e) => setAuditFilters((p) => ({ ...p, entityType: e.target.value.toUpperCase() }))}
+                  placeholder="LOAN_APPLICATION, FILE, etc."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Entity ID</label>
+                <input
+                  value={auditFilters.entityId}
+                  onChange={(e) => setAuditFilters((p) => ({ ...p, entityId: e.target.value }))}
+                  placeholder="optional entity reference"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Limit</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="200"
+                  value={auditFilters.limit}
+                  onChange={(e) => setAuditFilters((p) => ({ ...p, limit: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <div className="md:col-span-2 lg:col-span-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => loadAuditLogs()}
+                    disabled={auditLoading}
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all disabled:opacity-60"
+                  >
+                    Apply Filters
+                  </button>
+                  <button
+                    onClick={() => loadAuditLogs({ userId: "", entityType: "", entityId: "", limit: 50 })}
+                    disabled={auditLoading}
+                    className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all disabled:opacity-60"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Showing {auditLogs.length} entr{auditLogs.length === 1 ? "y" : "ies"}
+                </p>
+              </div>
+            </div>
+
+            {auditLoading ? (
+              <div className="p-8 text-center text-sm text-slate-500">Loading audit trail...</div>
+            ) : paginatedAuditLogs.length ? (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                      <tr>
+                        <th className="px-6 py-4">Timestamp</th>
+                        <th className="px-6 py-4">User</th>
+                        <th className="px-6 py-4">Action</th>
+                        <th className="px-6 py-4">Entity</th>
+                        <th className="px-6 py-4">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paginatedAuditLogs.map((log) => {
+                        const user = userById[log.userId] || {};
+                        return (
+                          <tr key={log.id || log.timestamp || Math.random()} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-6 py-4 text-sm text-slate-700">{formatDateTime(log.timestamp)}</td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm font-bold text-slate-800">{user.username || log.userId || "Unknown"}</div>
+                              <div className="text-[10px] text-slate-400">{user.email || "No email"}</div>
+                            </td>
+                            <td className="px-6 py-4 text-xs font-semibold text-slate-700">{log.action || "-"}</td>
+                            <td className="px-6 py-4 text-xs text-slate-600">
+                              <div className="font-semibold text-slate-800">{log.entityType || "-"}</div>
+                              <div className="text-[10px] text-slate-400">ID: {log.entityId || "N/A"}</div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-600 max-w-[280px]">{log.details || "-"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {totalAuditPages > 1 && (
+                  <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      Page {auditPage} of {totalAuditPages}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={auditPage === 1}
+                        onClick={() => setAuditPage((p) => p - 1)}
+                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button
+                        disabled={auditPage >= totalAuditPages}
+                        onClick={() => setAuditPage((p) => p + 1)}
+                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-10 text-center text-sm text-slate-500">No audit events match the selected filters.</div>
+            )}
+          </section>
+        )}
+
         {activeTab === "OFFICER" && (
           <div className="animate-in slide-in-from-bottom-4 duration-500">
             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm max-w-xl mx-auto">
@@ -348,7 +562,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Provision Staff</h3>
-                  <p className="text-sm text-slate-500">Assign Credit Officer permissions.</p>
+                  <p className="text-sm text-slate-500">Assign Loan Officer permissions.</p>
                 </div>
               </div>
               <form onSubmit={handleCreateOfficer} className="space-y-5">

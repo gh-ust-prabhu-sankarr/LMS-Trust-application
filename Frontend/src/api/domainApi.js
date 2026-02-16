@@ -178,6 +178,7 @@ export const adminApi = {
   getUsers: () => api.get("/admin/users"),
   toggleUserStatus: (userId, active) => api.put(`/admin/users/${userId}/status`, null, { params: { active } }),
   createOfficer: (payload) => api.post("/admin/users/officer", payload),
+  getAuditLogs: (params) => api.get("/admin/audit", { params }),
   getAuditByUser: (userId) => api.get(`/admin/audit/user/${userId}`),
   getAuditByEntity: (entityType, entityId) => api.get(`/admin/audit/entity/${entityType}/${entityId}`),
 };

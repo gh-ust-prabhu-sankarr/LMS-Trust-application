@@ -1,73 +1,28 @@
 package com.trumio.lms.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.trumio.lms.entity.AuditLog;
 import com.trumio.lms.repository.AuditLogRepository;
-import com.trumio.lms.util.AuditLogMaskUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class AuditService {
 
     private final AuditLogRepository auditLogRepository;
-    private final ObjectMapper objectMapper;
 
-    public void log(
-            String userId,
-            String action,
-            String entityType,
-            Object RequestSnapshot,
-            Object ResponseSnapshot,
-            String entityId,
-            String details
-    ) {
-
-        Map<String, Object> RequestSnapshotMap = null;
-        Map<String, Object> ResponseSnapshotMap = null;
-        RequestSnapshotMap = AuditLogMaskUtil.toMaskedMap(RequestSnapshot);
-        ResponseSnapshotMap = AuditLogMaskUtil.toMaskedMap(ResponseSnapshot);
-
-
-
-
-
+    public void log(String userId, String action, String entityType, String entityId, String details) {
         AuditLog auditLog = AuditLog.builder()
                 .userId(userId)
                 .action(action)
                 .entityType(entityType)
                 .entityId(entityId)
                 .details(details)
-                .requestSnapshot(RequestSnapshotMap)
-                .responseSnapshot(ResponseSnapshotMap)
-                .timestamp(LocalDateTime.now())
-                .build();
-
-        auditLogRepository.save(auditLog);
-    }
-    public void log(
-            String userId,
-            String action,
-            String entityType,
-            String entityId,
-            String details
-    ) {
-
-
-        AuditLog auditLog = AuditLog.builder()
-                .userId(userId)
-                .action(action)
-                .entityType(entityType)
-                .entityId(entityId)
-                .details(details)
-                .requestSnapshot(null)
-                .responseSnapshot(null)
                 .timestamp(LocalDateTime.now())
                 .build();
 
@@ -80,5 +35,23 @@ public class AuditService {
 
     public List<AuditLog> getAuditLogsByEntity(String entityType, String entityId) {
         return auditLogRepository.findByEntityTypeAndEntityId(entityType, entityId);
+    }
+
+    public List<AuditLog> getAuditLogs(String userId, String entityType, String entityId, int limit) {
+        int size = Math.min(Math.max(limit, 1), 200);
+        List<AuditLog> logs;
+
+        if (userId != null && !userId.isBlank()) {
+            logs = auditLogRepository.findByUserId(userId);
+        } else if (entityType != null && !entityType.isBlank() && entityId != null && !entityId.isBlank()) {
+            logs = auditLogRepository.findByEntityTypeAndEntityId(entityType, entityId);
+        } else if (entityType != null && !entityType.isBlank()) {
+            logs = auditLogRepository.findByEntityType(entityType);
+        } else {
+            logs = auditLogRepository.findAll();
+        }
+
+        logs.sort(Comparator.comparing(AuditLog::getTimestamp, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        return logs.stream().limit(size).toList();
     }
 }

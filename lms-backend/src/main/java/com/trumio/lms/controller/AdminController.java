@@ -20,13 +20,13 @@ public class AdminController {
 
     private final AuditService auditService;
     private final UserService userService;
-//for audit.. who appliced loan..kyc for particular user
+
     @GetMapping("/audit/user/{userId}")
     @PreAuthorize("hasAnyRole('ADMIN','CREDIT_OFFICER')")
     public ResponseEntity<List<AuditLog>> getUserAuditLogs(@PathVariable String userId) {
         return ResponseEntity.ok(auditService.getAuditLogsByUser(userId));
     }
-    //for audit.. who appliced loan..kyc
+
     @GetMapping("/audit/entity/{entityType}/{entityId}")
     @PreAuthorize("hasAnyRole('ADMIN','CREDIT_OFFICER')")
     public ResponseEntity<List<AuditLog>> getEntityAuditLogs(
@@ -34,7 +34,17 @@ public class AdminController {
             @PathVariable String entityId) {
         return ResponseEntity.ok(auditService.getAuditLogsByEntity(entityType, entityId));
     }
-//creating credit officer
+
+    @GetMapping({"/audit", "/audit/"})
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<AuditLog>> getAuditLogs(
+            @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String entityType,
+            @RequestParam(required = false) String entityId,
+            @RequestParam(defaultValue = "50") int limit) {
+        return ResponseEntity.ok(auditService.getAuditLogs(userId, entityType, entityId, limit));
+    }
+
     @PostMapping("/users/officer")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<User>> createCreditOfficer(
@@ -51,7 +61,7 @@ public class AdminController {
     public ResponseEntity<List<User>> getAllUsers() {
         return ResponseEntity.ok(userService.getAllUsers());
     }
-//for activate annd suspend...
+
     @PutMapping("/users/{userId}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<User>> toggleUserStatus(

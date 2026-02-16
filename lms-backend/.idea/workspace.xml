@@ -4,42 +4,121 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e6b7fae7-aa8f-4464-8f8c-d8bea662b41f" name="Changes" comment="Merge branch 'prabu_lms' of https://github.com/Ft-Trumio/JAVA_LMS_3_repo into Abhishek_lms&#10;&#10;# Conflicts:&#10;#&#9;Frontend/lms-backend/.gitignore&#10;#&#9;Frontend/lms-backend/pom.xml&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/LoanManagementSystemApplication.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/config/SecurityConfig.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/controller/AdminController.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/controller/KycController.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/controller/LoanApplicationController.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/controller/MediaFileController.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/controller/RepaymentController.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/dto/LoanApplicationRequest.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/dto/LoginRequest.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/dto/UserProfileResponse.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/entity/Customer.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/entity/LoanApplication.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/entity/User.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/exception/ErrorCode.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/repository/RepaymentRepository.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/security/UserDetailsServiceImpl.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/AuthService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/CustomerService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/EMIService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/KycService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/LoanApplicationService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/LoanWorkflowService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/MediaFileService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/RepaymentService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/service/UserService.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/util/EMICalculator.java&#10;#&#9;Frontend/lms-backend/src/main/java/com/trumio/lms/util/ValidationUtil.java&#10;#&#9;Frontend/lms-backend/src/main/resources/application.properties&#10;#&#9;Frontend/lms-backend/uploads/ea9157e1-7ab8-4f4a-8419-62244a327e5d.pdf&#10;#&#9;Frontend/src/api/axios.js&#10;#&#9;Frontend/src/api/domainApi.js&#10;#&#9;Frontend/src/context/AuthContext.jsx&#10;#&#9;Frontend/src/pages/admin/AdminDashboard.jsx&#10;#&#9;Frontend/src/pages/app/UserDashboard.jsx&#10;#&#9;Frontend/src/pages/officer/OfficerDashboard.jsx&#10;#&#9;Frontend/src/pages/pay/PaySuccess.jsx&#10;#&#9;Frontend/src/utils/errorMessage.js&#10;#&#9;lms-backend/.idea/workspace.xml&#10;#&#9;lms-backend/src/main/java/com/trumio/lms/config/SecurityConfig.java&#10;#&#9;lms-backend/src/main/java/com/trumio/lms/service/KycService.java">
-      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/app/UserDashboard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/app/UserDashboard.jsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/CustomerRequest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/CustomerRequest.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/CustomerService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/CustomerService.java" afterDir="false" />
+    <list default="true" id="9d6bf706-4498-4402-a727-c352f74d4e27" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/api/domainApi.js" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/api/domainApi.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/admin/AdminDashboard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/admin/AdminDashboard.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/AdminController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/AdminController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/AuditLogRepository.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/AuditLogRepository.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuditService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuditService.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Enum" />
+        <option value="Interface" />
+        <option value="Class" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
   </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;gh-ust-swathi-palagiri&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/Ft-Trumio/JAVA_LMS_3_repo.git&quot;,
+    &quot;accountId&quot;: &quot;cea40e3e-043e-4b25-86c2-8058dcabf163&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="39KRyKI6PzfLETRaZ9KbrkWJ4dW" />
   <component name="ProjectLevelVcsManager">
     <ConfirmationsSetting value="1" id="Add" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Application.LoanManagementSystemApplication.executor": "Run",
-    "git-widget-placeholder": "Abhishek__lms"
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Application.LoanManagementSystemApplication.executor&quot;: &quot;Run&quot;,
+    &quot;JUnit.LoanManagementSystemApplicationTests.executor&quot;: &quot;Run&quot;,
+    &quot;Maven.loan-management-app [clean,install].executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;Swathi__lms__copy&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/304492/Music/lms/JAVA_LMS_3_repo/lms-backend&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;MavenSettings&quot;
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveClassesOrPackagesDialog.RECENTS_KEY">
+      <recent name="com.trumio.lms.service" />
+      <recent name="com.trumio.lms.security" />
+    </key>
+  </component>
+  <component name="RunAnythingCache">
+    <option name="myCommands">
+      <command value="mvn clean install" />
+    </option>
+  </component>
   <component name="RunManager">
     <configuration default="true" type="JetRunConfigurationType">
-      <module name="loan-management-app" />
+      <module name="lms-backend" />
       <method v="2">
         <option name="Make" enabled="true" />
       </method>
     </configuration>
     <configuration default="true" type="KotlinStandaloneScriptRunConfigurationType">
-      <module name="loan-management-app" />
+      <module name="lms-backend" />
       <option name="filePath" />
       <method v="2" />
     </configuration>
   </component>
   <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="9d6bf706-4498-4402-a727-c352f74d4e27" name="Changes" comment="" />
+      <created>1770443028627</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1770443028627</updated>
+    </task>
     <servers />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="java-method">
+          <url>file://$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/LoanApplicationController.java</url>
+          <line>36</line>
+          <properties class="com.trumio.lms.controller.LoanApplicationController" method="submitApplication">
+            <option name="EMULATED" value="true" />
+            <option name="WATCH_EXIT" value="false" />
+          </properties>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/src/main/java/com/trumio/lms/LoanManagementSystemApplication.java</url>
+          <line>10</line>
+          <option name="timeStamp" value="4" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
