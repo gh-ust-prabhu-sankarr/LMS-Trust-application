@@ -33,6 +33,34 @@ const loanStatusClass = (status) => {
   return "bg-slate-100 text-slate-700 border-slate-200";
 };
 
+const txStatusMeta = (tx) => {
+  const rawStatus =
+    tx?.txStatus ||
+    tx?.status ||
+    tx?.paymentStatus ||
+    tx?.transactionStatus ||
+    tx?.stripeStatus ||
+    "";
+  const s = String(rawStatus || "").toUpperCase();
+  if (["PAID", "SUCCESS", "COMPLETED", "SETTLED"].includes(s)) {
+    return { label: "SUCCESS", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+  }
+  if (["FAILED", "FAILURE", "CANCELLED", "CANCELED"].includes(s)) {
+    return { label: "FAILED", cls: "bg-rose-50 text-rose-800 border-rose-200" };
+  }
+  if (s === "PENDING" || s === "PROCESSING") {
+    return { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+  }
+
+  const hasAmount = Number(tx?.amount || 0) > 0;
+  const hasPaymentDate = !!tx?.paymentDate;
+  if (hasAmount && hasPaymentDate) {
+    return { label: "SUCCESS", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+  }
+
+  return { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+};
+
 export default function UserDashboard() {
   const { user } = useAuth();
   
@@ -130,6 +158,7 @@ export default function UserDashboard() {
           ...r,
           txRef: r?.id || "-",
           txDetails: `Repayment of ${Number(r?.amount || 0)}`,
+          txStatus: r?.status || r?.paymentStatus || r?.transactionStatus || r?.stripeStatus || "",
           loanProductName: loan?.loanProductName || "Loan",
           requestedAmount: loan?.requestedAmount,
         }));
@@ -703,6 +732,7 @@ export default function UserDashboard() {
                           <tr>
                             <th className="px-6 py-4">Date & Time</th>
                             <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Status</th>
                             <th className="px-6 py-4">Transaction Ref</th>
                             <th className="px-6 py-4">Details</th>
                           </tr>
@@ -713,6 +743,11 @@ export default function UserDashboard() {
                               <td className="px-6 py-4 text-sm text-slate-700">{tx?.paymentDate ? new Date(tx.paymentDate).toLocaleString("en-IN") : "-"}</td>
                               <td className="px-6 py-4 text-sm font-semibold text-slate-800">
                                 {Number(tx?.amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${txStatusMeta(tx).cls}`}>
+                                  {txStatusMeta(tx).label}
+                                </span>
                               </td>
                               <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx?.txRef || "-"}</td>
                               <td className="px-6 py-4 text-xs text-slate-600">{tx?.txDetails || "-"}</td>

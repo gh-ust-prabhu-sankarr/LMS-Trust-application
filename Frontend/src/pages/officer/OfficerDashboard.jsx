@@ -921,7 +921,16 @@ function ModalInfo({ label, value }) {
 function DocumentAction({ label, fileId, fileName, placeholder = false }) {
     const handleVerify = () => {
         if (!fileId || placeholder) return;
-        fileApi.openInNewTab(fileId).catch(() => alert("Unable to open document."));
+        const previewTab = window.open("", "_blank", "noopener,noreferrer");
+        if (previewTab) {
+          previewTab.document.title = "Opening document...";
+          previewTab.document.body.innerHTML =
+            "<p style='font-family:sans-serif;padding:16px;'>Loading document preview...</p>";
+        }
+        fileApi.openInNewTab(fileId, previewTab).catch(() => {
+          if (previewTab && !previewTab.closed) previewTab.close();
+          alert("Unable to open document.");
+        });
     };
 
     return (

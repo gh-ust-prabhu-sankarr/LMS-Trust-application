@@ -146,11 +146,25 @@ export const fileApi = {
     window.URL.revokeObjectURL(blobUrl);
   },
 
-  openInNewTab: async (fileId) => {
+  openInNewTab: async (fileId, targetWindow = null) => {
     const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
-    const contentType = res?.headers?.["content-type"] || "application/pdf";
-    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: contentType }));
-    window.open(blobUrl, "_blank", "noopener,noreferrer");
+    const disposition = res?.headers?.["content-disposition"] || "";
+    const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
+    const filenameMatch = disposition.match(/filename=\"?([^"]+)\"?/i);
+    const filename = (filenameMatch?.[1] || "").toLowerCase();
+    const inferredType =
+      contentType && contentType !== "application/octet-stream"
+        ? contentType
+        : filename.endsWith(".pdf")
+        ? "application/pdf"
+        : "application/octet-stream";
+
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: inferredType }));
+    if (targetWindow && !targetWindow.closed) {
+      targetWindow.location.replace(blobUrl);
+    } else {
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    }
     setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
   },
 };
