@@ -1,17 +1,26 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { authApi } from "../api/authApi.js";
 import { getToken, removeToken, setToken } from "../utils/token.js";
 import { decodeToken, getRoleFromToken } from "../utils/jwt.js";
 
 const AuthContext = createContext(null);
+const ROLE_KEY = "lms_role";
+
+const normalizeRole = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  return raw.replace(/^ROLE_/, "");
+};
 
 export function AuthProvider({ children }) {
   const initialToken = getToken();
-  const initialRole = getRoleFromToken(initialToken);
+  const storedRole = initialToken ? normalizeRole(localStorage.getItem(ROLE_KEY)) : null;
+  const initialRole = getRoleFromToken(initialToken) || storedRole;
   const initialPayload = initialToken ? decodeToken(initialToken) : null;
 
   const [token, setTokenState] = useState(initialToken);
   const [role, setRole] = useState(initialRole);
+  const [authLoading, setAuthLoading] = useState(!!initialToken);
   const [user, setUser] = useState(
     initialToken
       ? {
@@ -21,6 +30,45 @@ export function AuthProvider({ children }) {
         }
       : null
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      if (!token) {
+        localStorage.removeItem(ROLE_KEY);
+        if (!cancelled) setAuthLoading(false);
+        return;
+      }
+
+      if (role) {
+        localStorage.setItem(ROLE_KEY, role);
+        if (!cancelled) setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const res = await authApi.me();
+        if (cancelled) return;
+        const apiUser = res?.data?.data || res?.data || null;
+        const resolvedRole = normalizeRole(apiUser?.role || apiUser?.authorities?.[0]);
+        if (resolvedRole) {
+          setRole(resolvedRole);
+          localStorage.setItem(ROLE_KEY, resolvedRole);
+          setUser((prev) => ({ ...(prev || {}), ...apiUser, role: resolvedRole }));
+        }
+      } catch {
+        // No-op. If /auth/me is not available, fallback is role from login/token.
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    };
+
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, role]);
 
   const login = async ({ identifier, password }) => {
     const normalizedIdentifier = identifier?.trim();
@@ -33,8 +81,9 @@ export function AuthProvider({ children }) {
     if (!t) throw new Error("Token missing in response");
     setToken(t);
     setTokenState(t);
-    const r = getRoleFromToken(t) || res?.data?.role || res?.data?.data?.role || null;
+    const r = normalizeRole(getRoleFromToken(t) || res?.data?.role || res?.data?.data?.role || null);
     setRole(r);
+    if (r) localStorage.setItem(ROLE_KEY, r);
     const userPayload = res?.data?.data?.user || res?.data?.user || null;
     setUser(
       userPayload || {
@@ -53,6 +102,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     removeToken();
+    localStorage.removeItem(ROLE_KEY);
     setTokenState(null);
     setRole(null);
     setUser(null);
@@ -78,6 +128,7 @@ export function AuthProvider({ children }) {
       token,
       role,
       user,
+      authLoading,
       isAuthenticated: !!token,
       login,
       register,
@@ -86,7 +137,7 @@ export function AuthProvider({ children }) {
       verifyOtp,
       resetPassword,
     }),
-    [token, role, user]
+    [token, role, user, authLoading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

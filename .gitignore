@@ -1,0 +1,4 @@
+.idea
+lms-backend/src/main/resources/.env
+Frontend/.env
+lms-backend/.idea/workspace.xml

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
 import { parseApplicationFields, parseCommaSeparated, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
-import { extractErrorMessage } from "../../utils/errorMessage.js";
 import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid } from "lucide-react";
 
 const initialProductForm = {
@@ -171,8 +170,8 @@ export default function AdminDashboard() {
     try {
       await adminApi.toggleUserStatus(user.id, !user.active);
       loadData();
-    } catch (err) {
-      alert(extractErrorMessage(err, "Unable to update user status."));
+    } catch {
+      alert("Action failed");
     }
   };
 
@@ -185,8 +184,8 @@ export default function AdminDashboard() {
       setActiveTab("DIRECTORY");
       loadData();
       alert("Staff account created.");
-    } catch (err) {
-      alert(extractErrorMessage(err, "Failed to create officer."));
+    } catch {
+      alert("Failed to create officer.");
     } finally {
       setProcessing(false);
     }
@@ -227,8 +226,6 @@ export default function AdminDashboard() {
 
       setProductForm(initialProductForm);
       alert("Product published successfully.");
-    } catch (err) {
-      alert(extractErrorMessage(err, "Failed to publish product."));
     } finally {
       setProcessing(false);
     }

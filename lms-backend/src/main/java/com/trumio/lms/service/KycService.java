@@ -32,8 +32,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KycService {
     private static final DateTimeFormatter KYC_COOLDOWN_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
-    private static final int MAX_KYC_SUBMISSION_ATTEMPTS = 2; //submitlimit
-    private static final int KYC_COOLDOWN_MONTHS = 3; //monthhh
+    private static final int MAX_KYC_SUBMISSION_ATTEMPTS = 2;
+    private static final int KYC_COOLDOWN_MONTHS = 3;
 
     private final KycRepository kycRepository;
     private final UserRepository userRepository;

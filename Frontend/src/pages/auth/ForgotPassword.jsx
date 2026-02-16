@@ -4,6 +4,7 @@ import AuthShell from "../../components/auth/AuthShell.jsx";
 import Input from "../../components/ui/Input.jsx";
 import Button from "../../components/ui/Button.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { getFriendlyError } from "../../utils/errorMessage.js";
 
 const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -32,7 +33,7 @@ export default function ForgotPassword() {
       await requestOtp({ email: email.trim() });
       navigate(`/verify-otp?email=${encodeURIComponent(email.trim())}`, { replace: true });
     } catch (e) {
-      setServerError(e?.response?.data?.message || e?.message || "OTP request failed");
+      setServerError(getFriendlyError(e, "OTP request failed. Please try again."));
     } finally {
       setBusy(false);
     }

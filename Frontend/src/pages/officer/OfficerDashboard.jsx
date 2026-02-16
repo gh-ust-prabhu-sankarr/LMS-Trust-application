@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, customerApi, kycApi, loanApi, unwrap, userApi, fileApi } from "../../api/domainApi.js";
+import { getFriendlyError } from "../../utils/errorMessage.js";
 import { 
   ChevronRight, ChevronLeft,
   ClipboardCheck, UserCheck, AlertCircle, 
@@ -179,7 +180,7 @@ export default function OfficerDashboard() {
       setSelectedKyc(null);
       await loadInitialData(); // Refresh lists
     } catch (err) {
-      alert(err?.response?.data?.message || err?.message || "Authorization failed");
+      alert(getFriendlyError(err, "KYC authorization failed."));
     }
   };
 
@@ -218,7 +219,7 @@ export default function OfficerDashboard() {
       await loadInitialData();
       setSelectedLoan(null);
     } catch (err) {
-      setLoanActionError(err?.response?.data?.message || err?.message || "Action failed");
+      setLoanActionError(getFriendlyError(err, "Action failed"));
     } finally {
       setActionBusy(false);
     }
@@ -246,6 +247,9 @@ export default function OfficerDashboard() {
   const rejectLoan = () => withLoanAction(async () => {
     const reason = rejectionReason.trim();
     if (!reason) throw new Error("Enter rejection reason");
+    if (selectedLoan.status === "SUBMITTED") {
+      await loanApi.moveToReview(selectedLoan.id);
+    }
     await loanApi.reject(selectedLoan.id, reason);
   });
 
@@ -862,7 +866,7 @@ export default function OfficerDashboard() {
                               onClick={rejectLoan}
                               className="w-full py-4 bg-white text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-rose-200 hover:bg-rose-50 transition-all disabled:opacity-60"
                             >
-                              {actionBusy ? "Processing..." : "Reject Loan"}
+                              {actionBusy ? "Processing..." : (selectedLoan.status === "SUBMITTED" ? "Move + Reject Loan" : "Reject Loan")}
                             </button>
                           </div>
                         )}
@@ -919,10 +923,18 @@ function ModalInfo({ label, value }) {
 }
 
 function DocumentAction({ label, fileId, fileName, placeholder = false }) {
+    const handleDownload = () => {
+        if (!fileId || placeholder) return;
+        fileApi.download(fileId, fileName).catch((err) => {
+          alert(getFriendlyError(err, "Unable to download document."));
+        });
+    };
+
     const handleVerify = () => {
         if (!fileId || placeholder) return;
-        const url = fileApi.downloadUrl(fileId);
-        window.open(url, "_blank", "noopener,noreferrer");
+        fileApi.openInNewTab(fileId).catch((err) => {
+          alert(getFriendlyError(err, "Unable to open document."));
+        });
     };
 
     return (
@@ -938,7 +950,7 @@ function DocumentAction({ label, fileId, fileName, placeholder = false }) {
             <div className="grid grid-cols-2 gap-3">
                 <button 
                     disabled={placeholder || !fileId}
-                    onClick={() => fileApi.download(fileId, fileName)}
+                    onClick={handleDownload}
                     className="py-3 bg-slate-50 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 flex items-center justify-center gap-2 hover:bg-slate-900 hover:text-white transition-all disabled:opacity-30"
                 >
                    <ExternalLink size={12}/> Download

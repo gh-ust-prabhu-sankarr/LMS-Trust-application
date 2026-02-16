@@ -4,6 +4,7 @@ import AuthShell from "../../components/auth/AuthShell.jsx";
 import Input from "../../components/ui/Input.jsx";
 import Button from "../../components/ui/Button.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { getFriendlyError } from "../../utils/errorMessage.js";
 
 const useQuery = () => new URLSearchParams(useLocation().search);
 
@@ -41,7 +42,7 @@ export default function ResetPassword() {
       await resetPassword({ email, otp, new_password: form.password });
       navigate("/login", { replace: true });
     } catch (e) {
-      setServerError(e?.response?.data?.message || e?.message || "Reset failed");
+      setServerError(getFriendlyError(e, "Password reset failed. Please try again."));
     } finally {
       setBusy(false);
     }

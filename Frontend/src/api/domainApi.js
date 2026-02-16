@@ -26,83 +26,51 @@ export const customerApi = {
 
 // ---------------- KYC API ----------------
 export const kycApi = {
-
-
-  // Submit KYC details along with PAN & Aadhaar documents
+  // Customer actions
   submit: (payload, panDocument, aadhaarDocument) => {
-
-    //  FormData --(multipart request)--pdf0byte
     const formData = new FormData();
-
-    // Append basic KYC fields (fallback to empty string to avoid undefined)
     formData.append("fullName", payload.fullName ?? "");
     formData.append("dob", payload.dob ?? "");
     formData.append("panNumber", payload.panNumber ?? "");
     formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
-
-    // Attach document files
-    formData.append("panDocument", panDocument); 
+    formData.append("panDocument", panDocument);
     formData.append("aadhaarDocument", aadhaarDocument);
 
-
-    // Content-Type must be multipart/form-data for file upload two sep data
     return api.post("/kyc/submit", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
+
   getMyKyc: () => api.get("/kyc/me"),
-  // Fetch KYC records by status pend---approv
+
+  // Officer/Admin actions
   getByStatus: async (status) => {
     try {
-      
       return await api.get("/officer/kyc", { params: { status } });
     } catch (err) {
-
-      // If error is not related to route fallback, re-throw
       if (!shouldFallbackEndpoint(err)) throw err;
       return api.get("/admin/kyc", { params: { status } });
     }
   },
 
-
-  // Approve a KYC request
   approve: async (kycId, remarks) => {
     try {
-      
       return await api.post(`/officer/kyc/${kycId}/approve`, { remarks });
     } catch (err) {
-
-      // If officer route fails, check if fallback allowed
       if (!shouldFallbackEndpoint(err)) throw err;
-
-      // Admin verification endpoint uses different structure
-      return api.post(`/admin/kyc/${kycId}/verify`, {
-        status: "APPROVED",
-        remarks,
-      });
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "APPROVED", remarks });
     }
   },
 
-
-  // Reject a KYC request
   reject: async (kycId, remarks) => {
     try {
-      // Officer rejection endpoint
       return await api.post(`/officer/kyc/${kycId}/reject`, { remarks });
     } catch (err) {
-
-      // If officer route not accessible, fallback to admin
       if (!shouldFallbackEndpoint(err)) throw err;
-
-      // Admin endpoint uses status field instead of separate reject route
-      return api.post(`/admin/kyc/${kycId}/verify`, {
-        status: "REJECTED",
-        remarks,
-      });
+      return api.post(`/admin/kyc/${kycId}/verify`, { status: "REJECTED", remarks });
     }
   },
 };
-
 
 // ---------------- PRODUCT API ----------------
 export const productApi = {
@@ -177,6 +145,32 @@ export const fileApi = {
     a.remove();
     window.URL.revokeObjectURL(blobUrl);
   },
+
+  getPreviewSource: async (fileId) => {
+    const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
+    const disposition = res?.headers?.["content-disposition"] || "";
+    const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
+    const filenameMatch = disposition.match(/filename=\"?([^"]+)\"?/i);
+    const fileName = filenameMatch?.[1] || "document";
+    const inferredType =
+      contentType && contentType !== "application/octet-stream"
+        ? contentType
+        : fileName.toLowerCase().endsWith(".pdf")
+        ? "application/pdf"
+        : "application/octet-stream";
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: inferredType }));
+    return { blobUrl, contentType: inferredType, fileName };
+  },
+
+  openInNewTab: async (fileId, targetWindow = null) => {
+    const { blobUrl } = await fileApi.getPreviewSource(fileId);
+    if (targetWindow && !targetWindow.closed) {
+      targetWindow.location.replace(blobUrl);
+    } else {
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    }
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+  },
 };
 
 // ---------------- ADMIN API ----------------
@@ -191,4 +185,4 @@ export const adminApi = {
 // ---------------- AUTH PROFILE API ----------------
 export const userApi = {
   getMe: () => api.get("/auth/me"),
-}
+};

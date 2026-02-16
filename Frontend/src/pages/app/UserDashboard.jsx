@@ -4,8 +4,8 @@ import PortalShell from "../../components/layout/PortalShell.jsx";
 import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
+import { getFriendlyError } from "../../utils/errorMessage.js";
 import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
-import { extractErrorMessage } from "../../utils/errorMessage.js";
 import { 
   User, ShieldCheck, Landmark, ReceiptIndianRupee, ChevronRight, 
   ArrowRight, FileText, Calendar, CheckCircle2, 
@@ -18,6 +18,16 @@ const money = (n) => {
   return Number.isFinite(value)
     ? value.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })
     : "-";
+};
+
+const annualFromMonthly = (monthly) => {
+  const value = Number(monthly);
+  return Number.isFinite(value) ? value * 12 : "";
+};
+
+const monthlyFromAnnual = (annual) => {
+  const value = Number(annual);
+  return Number.isFinite(value) ? value / 12 : NaN;
 };
 
 const KYC_META = {
@@ -34,9 +44,33 @@ const loanStatusClass = (status) => {
   return "bg-slate-100 text-slate-700 border-slate-200";
 };
 
-const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-const AADHAAR_REGEX = /^\d{12}$/;
-const PHONE_REGEX = /^\d{10}$/;
+const txStatusMeta = (tx) => {
+  const rawStatus =
+    tx?.txStatus ||
+    tx?.status ||
+    tx?.paymentStatus ||
+    tx?.transactionStatus ||
+    tx?.stripeStatus ||
+    "";
+  const s = String(rawStatus || "").toUpperCase();
+  if (["PAID", "SUCCESS", "COMPLETED", "SETTLED"].includes(s)) {
+    return { label: "SUCCESS", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+  }
+  if (["FAILED", "FAILURE", "CANCELLED", "CANCELED"].includes(s)) {
+    return { label: "FAILED", cls: "bg-rose-50 text-rose-800 border-rose-200" };
+  }
+  if (s === "PENDING" || s === "PROCESSING") {
+    return { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+  }
+
+  const hasAmount = Number(tx?.amount || 0) > 0;
+  const hasPaymentDate = !!tx?.paymentDate;
+  if (hasAmount && hasPaymentDate) {
+    return { label: "SUCCESS", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" };
+  }
+
+  return { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" };
+};
 
 export default function UserDashboard() {
   const { user } = useAuth();
@@ -52,7 +86,7 @@ export default function UserDashboard() {
     panNumber: "",
     address: "",
     employmentType: "",
-    monthlyIncome: "",
+    annualIncome: "",
   });
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -99,15 +133,13 @@ export default function UserDashboard() {
         panNumber: p?.panNumber || "",
         address: p?.address || "",
         employmentType: p?.employmentType || "",
-        monthlyIncome: p?.monthlyIncome ?? "",
+        annualIncome: annualFromMonthly(p?.monthlyIncome),
       });
       const loans = lRes.data || [];
       setMyLoans(loans);
       const kRes = await kycApi.getMyKyc().catch(() => null);
       if (kRes?.data) setMyKyc(kRes.data);
-    } catch (e) {
-      setError(extractErrorMessage(e, "Failed to synchronize workspace."));
-    }
+    } catch (e) { setError("Failed to synchronize workspace."); }
     finally { setLoading(false); }
   };
 
@@ -137,6 +169,7 @@ export default function UserDashboard() {
           ...r,
           txRef: r?.id || "-",
           txDetails: `Repayment of ${Number(r?.amount || 0)}`,
+          txStatus: r?.status || r?.paymentStatus || r?.transactionStatus || r?.stripeStatus || "",
           loanProductName: loan?.loanProductName || "Loan",
           requestedAmount: loan?.requestedAmount,
         }));
@@ -195,7 +228,7 @@ export default function UserDashboard() {
       panNumber: profile?.panNumber || "",
       address: profile?.address || "",
       employmentType: profile?.employmentType || "",
-      monthlyIncome: profile?.monthlyIncome ?? "",
+      annualIncome: annualFromMonthly(profile?.monthlyIncome),
     });
     setProfileError("");
     setProfileSuccess("");
@@ -212,31 +245,11 @@ export default function UserDashboard() {
       panNumber: profileForm.panNumber.trim().toUpperCase(),
       address: profileForm.address.trim(),
       employmentType: profileForm.employmentType.trim(),
-      monthlyIncome: Number(profileForm.monthlyIncome),
+      monthlyIncome: monthlyFromAnnual(profileForm.annualIncome),
     };
 
-    if (!payload.fullName) {
-      setProfileError("Full name is required.");
-      return;
-    }
-    if (!PHONE_REGEX.test(payload.phone)) {
-      setProfileError("Phone must be exactly 10 digits.");
-      return;
-    }
-    if (!PAN_REGEX.test(payload.panNumber)) {
-      setProfileError("Invalid PAN format. Enter in format ABCDE1234F.");
-      return;
-    }
-    if (!payload.address) {
-      setProfileError("Address is required.");
-      return;
-    }
-    if (!payload.employmentType) {
-      setProfileError("Employment type is required.");
-      return;
-    }
-    if (!Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
-      setProfileError("Monthly income must be a positive number.");
+    if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType || !Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
+      setProfileError("Fill all profile fields with valid values.");
       return;
     }
 
@@ -251,12 +264,12 @@ export default function UserDashboard() {
         panNumber: updated?.panNumber || "",
         address: updated?.address || "",
         employmentType: updated?.employmentType || "",
-        monthlyIncome: updated?.monthlyIncome ?? "",
+        annualIncome: annualFromMonthly(updated?.monthlyIncome),
       });
       setProfileSuccess("Profile updated successfully.");
       setEditing(false);
     } catch (e) {
-      setProfileError(extractErrorMessage(e, "Failed to update profile"));
+      setProfileError(e?.response?.data?.message || e?.message || "Failed to update profile");
     } finally {
       setProfileBusy(false);
     }
@@ -316,7 +329,7 @@ export default function UserDashboard() {
   }, [activeLoanId, isScheduleFullyPaid]);
 
   const handleFileDownload = (id, name) =>
-    fileApi.download(id, name).catch((err) => alert(extractErrorMessage(err, "Download failed.")));
+    fileApi.download(id, name).catch((e) => alert(getFriendlyError(e, "Download failed")));
   const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
 
   const openAgreementModal = (loan) => {
@@ -348,13 +361,13 @@ export default function UserDashboard() {
       setMyLoans(freshLoans?.data || []);
       closeAgreementModal(true);
     } catch (e) {
-      setAgreementError(extractErrorMessage(e, "Agreement acceptance failed."));
+      setAgreementError(e?.response?.data?.message || e?.message || "Agreement acceptance failed.");
     } finally {
       setAgreementBusy(false);
     }
   };
-//kyc ---
-  const KYC_MAX_ATTEMPTS = 2;  
+
+  const KYC_MAX_ATTEMPTS = 2;
   const KYC_COOLDOWN_MONTHS = 3;
   const attemptsUsed = Number(myKyc?.submissionCount || 0);
   const lastSubmittedAt = myKyc?.submittedAt ? new Date(myKyc.submittedAt) : null;
@@ -385,24 +398,12 @@ export default function UserDashboard() {
     const payload = {
       fullName: kycForm.fullName.trim(),
       dob: kycForm.dob,
-      panNumber: kycForm.panNumber.trim().toUpperCase(), //UPPERCASE--
+      panNumber: kycForm.panNumber.trim().toUpperCase(),
       aadhaarNumber: kycForm.aadhaarNumber.trim(),
     };
-//VALIDATION..
-    if (!payload.fullName) {
-      setKycError("Full name is required.");
-      return;
-    }
-    if (!payload.dob) {
-      setKycError("Date of birth is required.");
-      return;
-    }
-    if (!PAN_REGEX.test(payload.panNumber)) {
-      setKycError("Invalid PAN format. Enter in format ABCDE1234F.");
-      return;
-    }
-    if (!AADHAAR_REGEX.test(payload.aadhaarNumber)) {
-      setKycError("Aadhaar must be exactly 12 digits.");
+
+    if (!payload.fullName || !payload.dob || !payload.panNumber || !payload.aadhaarNumber) {
+      setKycError("Fill all KYC fields.");
       return;
     }
     if (!panFile || !aadhaarFile) {
@@ -424,7 +425,7 @@ export default function UserDashboard() {
       setPanFile(null);
       setAadhaarFile(null);
     } catch (e) {
-      setKycError(extractErrorMessage(e, "KYC submission failed"));
+      setKycError(getFriendlyError(e, "KYC submission failed"));
     } finally {
       setKycBusy(false);
     }
@@ -519,8 +520,8 @@ export default function UserDashboard() {
                       <Field label="Employment">
                         <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
-                      <Field label="Income">
-                        <input type="number" min="1" value={profileForm.monthlyIncome} onChange={(e) => handleProfileField("monthlyIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      <Field label="Annual Income">
+                        <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
                       <Field label="Address">
                         <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
@@ -531,9 +532,9 @@ export default function UserDashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InfoBox label="Legal Name" value={profile?.fullName} />
                       <InfoBox label="Contact" value={profile?.phone} />
-                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} /> {/*maskinggg */}
+                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} />
                       <InfoBox label="Employment" value={profile?.employmentType} />
-                      <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
+                      <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
                       <InfoBox label="Address" value={profile?.address} />
                       <InfoBox label="CIBIL Score" value={profile?.creditScore} />
                     </div>
@@ -581,7 +582,7 @@ export default function UserDashboard() {
                     <div className="space-y-8">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <InfoBox label="Holder" value={myKyc.fullName} />
-                        <InfoBox label="PAN" value={maskPanNumber(myKyc.panNumber)} /> 
+                        <InfoBox label="PAN" value={maskPanNumber(myKyc.panNumber)} />
                         <InfoBox label="Aadhaar" value={maskAadhaarNumber(myKyc.aadhaarNumber)} />
                         <InfoBox label="DOB" value={formatDate(myKyc.dob)} />
                       </div>
@@ -743,6 +744,7 @@ export default function UserDashboard() {
                           <tr>
                             <th className="px-6 py-4">Date & Time</th>
                             <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Status</th>
                             <th className="px-6 py-4">Transaction Ref</th>
                             <th className="px-6 py-4">Details</th>
                           </tr>
@@ -753,6 +755,11 @@ export default function UserDashboard() {
                               <td className="px-6 py-4 text-sm text-slate-700">{tx?.paymentDate ? new Date(tx.paymentDate).toLocaleString("en-IN") : "-"}</td>
                               <td className="px-6 py-4 text-sm font-semibold text-slate-800">
                                 {Number(tx?.amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${txStatusMeta(tx).cls}`}>
+                                  {txStatusMeta(tx).label}
+                                </span>
                               </td>
                               <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx?.txRef || "-"}</td>
                               <td className="px-6 py-4 text-xs text-slate-600">{tx?.txDetails || "-"}</td>
