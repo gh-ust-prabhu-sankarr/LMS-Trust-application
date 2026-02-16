@@ -145,6 +145,14 @@ export const fileApi = {
     a.remove();
     window.URL.revokeObjectURL(blobUrl);
   },
+
+  openInNewTab: async (fileId) => {
+    const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
+    const contentType = res?.headers?.["content-type"] || "application/pdf";
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: contentType }));
+    window.open(blobUrl, "_blank", "noopener,noreferrer");
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+  },
 };
 
 // ---------------- ADMIN API ----------------

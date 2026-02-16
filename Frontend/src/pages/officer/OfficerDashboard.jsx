@@ -921,8 +921,7 @@ function ModalInfo({ label, value }) {
 function DocumentAction({ label, fileId, fileName, placeholder = false }) {
     const handleVerify = () => {
         if (!fileId || placeholder) return;
-        const url = fileApi.downloadUrl(fileId);
-        window.open(url, "_blank", "noopener,noreferrer");
+        fileApi.openInNewTab(fileId).catch(() => alert("Unable to open document."));
     };
 
     return (

@@ -4,6 +4,7 @@ import AuthShell from "../../components/auth/AuthShell.jsx";
 import Input from "../../components/ui/Input.jsx";
 import Button from "../../components/ui/Button.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { getFriendlyError } from "../../utils/errorMessage.js";
 
 const useQuery = () => new URLSearchParams(useLocation().search);
 
@@ -39,7 +40,7 @@ export default function VerifyOtp() {
         replace: true,
       });
     } catch (e) {
-      setServerError(e?.response?.data?.message || e?.message || "OTP verify failed");
+      setServerError(getFriendlyError(e, "OTP verification failed. Please try again."));
     } finally {
       setBusy(false);
     }
@@ -51,7 +52,7 @@ export default function VerifyOtp() {
       setBusy(true);
       await requestOtp({ email });
     } catch (e) {
-      setServerError(e?.response?.data?.message || e?.message || "Resend failed");
+      setServerError(getFriendlyError(e, "OTP resend failed. Please try again."));
     } finally {
       setBusy(false);
     }

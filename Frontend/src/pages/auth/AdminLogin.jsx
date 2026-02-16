@@ -4,6 +4,7 @@ import AuthShell from "../../components/auth/AuthShell.jsx";
 import Input from "../../components/ui/Input.jsx";
 import Button from "../../components/ui/Button.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { getFriendlyError } from "../../utils/errorMessage.js";
 
 const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -57,7 +58,7 @@ export default function AdminLogin() {
 
       navigate("/admin", { replace: true });
     } catch (err) {
-      setServerError(err?.response?.data?.message || err?.message || "Login failed");
+      setServerError(getFriendlyError(err, "Login failed. Please try again."));
     } finally {
       setBusy(false);
     }
