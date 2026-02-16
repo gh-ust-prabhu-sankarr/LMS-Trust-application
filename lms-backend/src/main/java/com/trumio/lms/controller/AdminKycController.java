@@ -4,6 +4,7 @@ import com.trumio.lms.dto.AdminKycRequest;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.KycResponse;
 import com.trumio.lms.entity.enums.KYCStatus;
+import com.trumio.lms.idempotency.Idempotent;
 import com.trumio.lms.service.KycService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +41,7 @@ public class AdminKycController {
      * }
      */
     @PostMapping("/{kycId}/verify")
+    @Idempotent(entityType = "KYC")
     public ResponseEntity<ApiResponse<KycResponse>> verifyKyc(
             @PathVariable String kycId,
             @Valid @RequestBody AdminKycRequest request) {

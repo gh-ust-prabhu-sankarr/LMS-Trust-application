@@ -3,6 +3,7 @@ package com.trumio.lms.controller;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.KycRequest;
 import com.trumio.lms.dto.KycResponse;
+import com.trumio.lms.idempotency.Idempotent;
 import com.trumio.lms.service.KycService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

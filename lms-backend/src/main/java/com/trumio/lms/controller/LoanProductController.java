@@ -4,6 +4,7 @@ package com.trumio.lms.controller;
 import com.trumio.lms.dto.ApiResponse;
 import com.trumio.lms.dto.LoanProductRequest;
 import com.trumio.lms.entity.LoanProduct;
+import com.trumio.lms.idempotency.Idempotent;
 import com.trumio.lms.service.LoanProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class LoanProductController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @Idempotent(entityType = "LoanProduct")
     public ResponseEntity<ApiResponse<LoanProduct>> createProduct(@Valid @RequestBody LoanProductRequest request) {
         return ResponseEntity.ok(loanProductService.createProduct(request));
     }

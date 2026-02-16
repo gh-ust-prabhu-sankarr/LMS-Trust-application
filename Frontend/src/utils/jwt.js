@@ -26,6 +26,19 @@ export const decodeToken = (token) => {
   return b64urlToJson(parts[1]);
 };
 
+export const isTokenExpired = (token) => {
+  const payload = decodeToken(token);
+  if (!payload?.exp) return false;
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  return Number(payload.exp) <= nowInSeconds;
+};
+
+export const isTokenUsable = (token) => {
+  const payload = decodeToken(token);
+  if (!payload) return false;
+  return !isTokenExpired(token);
+};
+
 export const getRoleFromToken = (token) => {
   const payload = decodeToken(token);
   if (!payload) return null;
