@@ -33,7 +33,7 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @Bean
+    @Bean //When user registers, password is converted into secret coded form (BCrypt).So real password is never stored.
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
@@ -72,9 +72,9 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ allow preflight
+                        //  allow preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        // ✅ allow auth endpoints
+                        //  allow auth endpoints
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         // everything else needs auth; method-level @PreAuthorize still applies
