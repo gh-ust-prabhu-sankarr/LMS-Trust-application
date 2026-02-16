@@ -54,6 +54,7 @@ public enum ErrorCode {
     INVALID_FILE_TYPE("FILE_003", "Invalid file type", HttpStatus.BAD_REQUEST),
 
 
+
     //Idempotency
     DUPLICATE_REQUEST("IDP_001", "Request is currently being processed", HttpStatus.CONFLICT),
 

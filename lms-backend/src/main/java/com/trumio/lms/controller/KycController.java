@@ -35,7 +35,6 @@ public class KycController {
      */
     @PostMapping(value = "/submit", consumes = {"multipart/form-data"})
     @PreAuthorize("hasRole('CUSTOMER')")
-    @Idempotent(entityType = "KYC")
     public ResponseEntity<ApiResponse<KycResponse>> submitKyc(
             @Valid @ModelAttribute KycRequest request, //read tetxt filed...name...  Read text fields from multipart request
             @RequestParam("panDocument") MultipartFile panDocument, //extract and  file size and file type conetnt
