@@ -1,5 +1,7 @@
 import { api } from "./axios.js";
+
 export const unwrap = (res) => res?.data?.data ?? res?.data;
+
 const shouldFallbackEndpoint = (err) => {
   const status = err?.response?.status;
   const message = String(err?.response?.data?.message || err?.message || "").toLowerCase();
@@ -24,48 +26,83 @@ export const customerApi = {
 
 // ---------------- KYC API ----------------
 export const kycApi = {
-  // Customer actions
-  submit: (payload, panDocument, aadhaarDocument) => {      //diff typ data text ----binary
-    const formData = new FormData();   //multipart/form-data starts. 
+
+
+  // Submit KYC details along with PAN & Aadhaar documents
+  submit: (payload, panDocument, aadhaarDocument) => {
+
+    //  FormData --(multipart request)--pdf0byte
+    const formData = new FormData();
+
+    // Append basic KYC fields (fallback to empty string to avoid undefined)
     formData.append("fullName", payload.fullName ?? "");
     formData.append("dob", payload.dob ?? "");
     formData.append("panNumber", payload.panNumber ?? "");
     formData.append("aadhaarNumber", payload.aadhaarNumber ?? "");
-    formData.append("panDocument", panDocument); // it contians nam sizeee type actual data   Browser reads file as bytes
+
+    // Attach document files
+    formData.append("panDocument", panDocument); 
     formData.append("aadhaarDocument", aadhaarDocument);
+
+
+    // Content-Type must be multipart/form-data for file upload two sep data
     return api.post("/kyc/submit", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
   getMyKyc: () => api.get("/kyc/me"),
-
-  // Officer/Admin actions
+  // Fetch KYC records by status pend---approv
   getByStatus: async (status) => {
     try {
+      
       return await api.get("/officer/kyc", { params: { status } });
     } catch (err) {
+
+      // If error is not related to route fallback, re-throw
       if (!shouldFallbackEndpoint(err)) throw err;
-      // Fallback for environments still exposing admin KYC endpoint
       return api.get("/admin/kyc", { params: { status } });
     }
   },
+
+
+  // Approve a KYC request
   approve: async (kycId, remarks) => {
     try {
+      
       return await api.post(`/officer/kyc/${kycId}/approve`, { remarks });
     } catch (err) {
+
+      // If officer route fails, check if fallback allowed
       if (!shouldFallbackEndpoint(err)) throw err;
-      return api.post(`/admin/kyc/${kycId}/verify`, { status: "APPROVED", remarks });
+
+      // Admin verification endpoint uses different structure
+      return api.post(`/admin/kyc/${kycId}/verify`, {
+        status: "APPROVED",
+        remarks,
+      });
     }
   },
+
+
+  // Reject a KYC request
   reject: async (kycId, remarks) => {
     try {
+      // Officer rejection endpoint
       return await api.post(`/officer/kyc/${kycId}/reject`, { remarks });
     } catch (err) {
+
+      // If officer route not accessible, fallback to admin
       if (!shouldFallbackEndpoint(err)) throw err;
-      return api.post(`/admin/kyc/${kycId}/verify`, { status: "REJECTED", remarks });
+
+      // Admin endpoint uses status field instead of separate reject route
+      return api.post(`/admin/kyc/${kycId}/verify`, {
+        status: "REJECTED",
+        remarks,
+      });
     }
   },
 };
+
 
 // ---------------- PRODUCT API ----------------
 export const productApi = {
@@ -78,6 +115,7 @@ export const productApi = {
 export const loanApi = {
   create: (payload) => api.post("/loans", payload),
   submit: (loanId) => api.post(`/loans/${loanId}/submit`),
+  acceptAgreement: (loanId, payload) => api.post(`/loans/${loanId}/agreement/accept`, payload),
   getMyLoans: () => api.get("/loans/my-loans"),
   getById: (loanId) => api.get(`/loans/${loanId}`),
   getByStatus: (status) => api.get(`/loans/status/${status}`),
@@ -89,8 +127,19 @@ export const loanApi = {
 
 // ---------------- REPAYMENT API ----------------
 export const repaymentApi = {
+  // mock/manual payment (if you still want it)
   makePayment: (payload) => api.post("/repayments", payload),
+
+  // ✅ Stripe checkout session
+  createStripeCheckoutSession: (payload) =>
+    api.post("/repayments/stripe/checkout-session", payload),
+
+  // ✅ FIXED: backend expects JSON body { sessionId }
+  confirmStripePayment: (sessionId) =>
+  api.post("/repayments/stripe/confirm", { sessionId }),
+
   getByLoan: (loanId) => api.get(`/repayments/loan/${loanId}`),
+  getAll: () => api.get("/repayments"),
   getSchedule: (loanId) => api.get(`/repayments/schedule/${loanId}`),
   markMissed: (loanId) => api.post(`/repayments/miss/${loanId}`),
 };
@@ -102,22 +151,23 @@ export const fileApi = {
     formData.append("file", file);
     formData.append("entityType", entityType);
     formData.append("entityId", entityId);
-    if (displayName) {
-      formData.append("displayName", displayName);
-    }
+    if (displayName) formData.append("displayName", displayName);
 
     return api.post("/files/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
+
   listByEntity: (entityType, entityId) => api.get(`/files/entity/${entityType}/${entityId}`),
   deleteFile: (fileId) => api.delete(`/files/${fileId}`),
   downloadUrl: (fileId) => `${api.defaults.baseURL}/files/download/${fileId}`,
+
   download: async (fileId, fallbackName = "document.pdf") => {
     const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
     const disposition = res?.headers?.["content-disposition"] || "";
     const match = disposition.match(/filename=\"?([^"]+)\"?/i);
     const filename = match?.[1] || fallbackName;
+
     const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
     const a = document.createElement("a");
     a.href = blobUrl;
@@ -141,4 +191,4 @@ export const adminApi = {
 // ---------------- AUTH PROFILE API ----------------
 export const userApi = {
   getMe: () => api.get("/auth/me"),
-};
+}

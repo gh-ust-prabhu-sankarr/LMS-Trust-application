@@ -32,6 +32,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KycService {
     private static final DateTimeFormatter KYC_COOLDOWN_DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
+    private static final int MAX_KYC_SUBMISSION_ATTEMPTS = 2; //submitlimit
+    private static final int KYC_COOLDOWN_MONTHS = 3; //monthhh
 
     private final KycRepository kycRepository;
     private final UserRepository userRepository;
@@ -44,21 +46,21 @@ public class KycService {
             MultipartFile panDocument,
             MultipartFile aadhaarDocument) {
         User user = getCurrentUser();
-        Optional<Kyc> existingOpt = kycRepository.findByUserId(user.getId());
+        Optional<Kyc> existingOpt = kycRepository.findByUserId(user.getId());//optional to handle nullpointer
         Kyc existing = existingOpt.orElse(null);
 
         String pan = request.getPanNumber().trim().toUpperCase();
         String aadhaar = request.getAadhaarNumber().trim();
-
+//pancard validation... //no same ---numbers
         validatePanOwnership(pan, existing);
         validateAadhaarOwnership(aadhaar, existing);
-
+//age validation >18
         LocalDate parsedDob = parseDob(request.getDob());
         validateAge(parsedDob);
 
         Kyc saved;
         if (existing == null) {
-            Kyc kyc = Kyc.builder()
+            Kyc kyc = Kyc.builder() //to create new kyc record  from lombok
                     .userId(user.getId())
                     .fullName(request.getFullName().trim())
                     .dob(parsedDob)
@@ -74,9 +76,9 @@ public class KycService {
         } else {
             int currentCount = existing.getSubmissionCount() == null ? 1 : existing.getSubmissionCount();
             LocalDateTime now = LocalDateTime.now();
-            if (currentCount >= 2) {
+            if (currentCount >= MAX_KYC_SUBMISSION_ATTEMPTS) {
                 LocalDateTime lastSubmittedAt = existing.getSubmittedAt();
-                LocalDateTime nextEligibleAt = (lastSubmittedAt != null ? lastSubmittedAt : now).plusMonths(2);
+                LocalDateTime nextEligibleAt = (lastSubmittedAt != null ? lastSubmittedAt : now).plusMonths(KYC_COOLDOWN_MONTHS);
                 if (now.isBefore(nextEligibleAt)) {
                     throw new BusinessException(
                             ErrorCode.KYC_ALREADY_SUBMITTED,
@@ -102,7 +104,7 @@ public class KycService {
 
         if (saved.getPanDocumentFileId() != null) {
             try {
-                mediaFileService.deleteFile(saved.getPanDocumentFileId(), user.getId());
+                mediaFileService.deleteFile(saved.getPanDocumentFileId(), user.getId());//delete old file if exist
             } catch (Exception ignored) {
             }
         }
@@ -133,7 +135,7 @@ public class KycService {
 
         auditService.log(user.getId(), "KYC_SUBMITTED", "KYC", saved.getId(), "KYC submitted by customer");
 
-        return ApiResponse.success("KYC submitted successfully", toResponse(saved));
+        return ApiResponse.success("KYC submitted successfully", toResponse(saved));//Convert a Kyc entity into a KycResponse DTO.
     }
 
     public KycResponse getMyKyc() {
@@ -171,7 +173,7 @@ public class KycService {
         targetUser.setKycStatus(saved.getStatus());
         targetUser.setUpdatedAt(LocalDateTime.now());
         userRepository.save(targetUser);
-
+//credit score  generation
         customerRepository.findByUserId(saved.getUserId()).ifPresent(customer -> {
             customer.setKycStatus(saved.getStatus());
             if (saved.getStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {

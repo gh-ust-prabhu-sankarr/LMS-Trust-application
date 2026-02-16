@@ -5,9 +5,10 @@ import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/d
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
 import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
+import { extractErrorMessage } from "../../utils/errorMessage.js";
 import { 
   User, ShieldCheck, Landmark, ReceiptIndianRupee, ChevronRight, 
-  ArrowRight, FileText, Wallet, Calendar, CheckCircle2, 
+  ArrowRight, FileText, Calendar, CheckCircle2, 
   AlertCircle, ChevronLeft, UploadCloud
 } from "lucide-react";
 
@@ -33,6 +34,10 @@ const loanStatusClass = (status) => {
   return "bg-slate-100 text-slate-700 border-slate-200";
 };
 
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const AADHAAR_REGEX = /^\d{12}$/;
+const PHONE_REGEX = /^\d{10}$/;
+
 export default function UserDashboard() {
   const { user } = useAuth();
   
@@ -41,10 +46,30 @@ export default function UserDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profile, setProfile] = useState(null);
+  const [profileForm, setProfileForm] = useState({
+    fullName: "",
+    phone: "",
+    panNumber: "",
+    address: "",
+    employmentType: "",
+    monthlyIncome: "",
+  });
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileSuccess, setProfileSuccess] = useState("");
   const [myLoans, setMyLoans] = useState([]);
+  const [myTransactions, setMyTransactions] = useState([]);
+  const [txPage, setTxPage] = useState(1);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
   const [activeLoanId, setActiveLoanId] = useState("");
-  const { schedule, docs, actionBusy, payInstallment } = useEmiSchedule(activeLoanId);
+  const { schedule, docs, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
+  const [bulkAmount, setBulkAmount] = useState("");
   const [myKyc, setMyKyc] = useState(null);
+  const [agreementLoan, setAgreementLoan] = useState(null);
+  const [agreementName, setAgreementName] = useState("");
+  const [agreementBusy, setAgreementBusy] = useState(false);
+  const [agreementError, setAgreementError] = useState("");
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -56,6 +81,9 @@ export default function UserDashboard() {
   const [panFile, setPanFile] = useState(null);
   const [aadhaarFile, setAadhaarFile] = useState(null);
   const [kycForm, setKycForm] = useState({ fullName: "", dob: "", panNumber: "", aadhaarNumber: "" });
+  const [kycBusy, setKycBusy] = useState(false);
+  const [kycError, setKycError] = useState("");
+  const [kycSuccess, setKycSuccess] = useState("");
 
   const formatDate = (val) => val ? new Date(val).toLocaleDateString("en-IN") : "-";
 
@@ -63,17 +91,176 @@ export default function UserDashboard() {
     setLoading(true);
     try {
       const [pRes, lRes] = await Promise.all([customerApi.getMyProfile(), loanApi.getMyLoans()]);
-      setProfile(pRes.data);
+      const p = pRes.data;
+      setProfile(p);
+      setProfileForm({
+        fullName: p?.fullName || "",
+        phone: p?.phone || "",
+        panNumber: p?.panNumber || "",
+        address: p?.address || "",
+        employmentType: p?.employmentType || "",
+        monthlyIncome: p?.monthlyIncome ?? "",
+      });
       const loans = lRes.data || [];
       setMyLoans(loans);
       const kRes = await kycApi.getMyKyc().catch(() => null);
       if (kRes?.data) setMyKyc(kRes.data);
-    } catch (e) { setError("Failed to synchronize workspace."); }
+    } catch (e) {
+      setError(extractErrorMessage(e, "Failed to synchronize workspace."));
+    }
     finally { setLoading(false); }
   };
 
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { setCurrentPage(1); }, [activeLoanId]);
+  useEffect(() => { setTxPage(1); }, [myTransactions]);
+
+  const loadMyTransactions = async () => {
+    if (!myLoans.length) {
+      setMyTransactions([]);
+      setTxError("");
+      return;
+    }
+
+    setTxLoading(true);
+    setTxError("");
+    try {
+      const settled = await Promise.allSettled(
+        myLoans.map((loan) => repaymentApi.getByLoan(loan.id))
+      );
+
+      const mapped = settled.flatMap((result, index) => {
+        if (result.status !== "fulfilled") return [];
+        const loan = myLoans[index];
+        const rows = result.value?.data || [];
+        return rows.map((r) => ({
+          ...r,
+          txRef: r?.id || "-",
+          txDetails: `Repayment of ${Number(r?.amount || 0)}`,
+          loanProductName: loan?.loanProductName || "Loan",
+          requestedAmount: loan?.requestedAmount,
+        }));
+      });
+
+      mapped.sort((a, b) => {
+        const ta = a?.paymentDate ? new Date(a.paymentDate).getTime() : 0;
+        const tb = b?.paymentDate ? new Date(b.paymentDate).getTime() : 0;
+        return tb - ta;
+      });
+
+      const failures = settled.filter((item) => item.status === "rejected").length;
+      if (failures === settled.length) {
+        setTxError("Failed to fetch transactions.");
+      }
+
+      setMyTransactions(mapped);
+    } catch (e) {
+      setTxError(e?.response?.data?.message || e?.message || "Failed to fetch transactions.");
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== "transactions") return;
+    loadMyTransactions();
+  }, [activeTab, myLoans]);
+
+  useEffect(() => {
+    if (!myKyc) {
+      setKycForm({
+        fullName: profile?.fullName || "",
+        dob: "",
+        panNumber: profile?.panNumber || "",
+        aadhaarNumber: "",
+      });
+      return;
+    }
+    setKycForm({
+      fullName: myKyc?.fullName || "",
+      dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
+      panNumber: myKyc?.panNumber || "",
+      aadhaarNumber: myKyc?.aadhaarNumber || "",
+    });
+  }, [myKyc, profile]);
+
+  const handleProfileField = (key, value) => {
+    setProfileForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const resetProfileEdit = () => {
+    setProfileForm({
+      fullName: profile?.fullName || "",
+      phone: profile?.phone || "",
+      panNumber: profile?.panNumber || "",
+      address: profile?.address || "",
+      employmentType: profile?.employmentType || "",
+      monthlyIncome: profile?.monthlyIncome ?? "",
+    });
+    setProfileError("");
+    setProfileSuccess("");
+    setEditing(false);
+  };
+
+  const saveProfile = async () => {
+    setProfileError("");
+    setProfileSuccess("");
+
+    const payload = {
+      fullName: profileForm.fullName.trim(),
+      phone: profileForm.phone.trim(),
+      panNumber: profileForm.panNumber.trim().toUpperCase(),
+      address: profileForm.address.trim(),
+      employmentType: profileForm.employmentType.trim(),
+      monthlyIncome: Number(profileForm.monthlyIncome),
+    };
+
+    if (!payload.fullName) {
+      setProfileError("Full name is required.");
+      return;
+    }
+    if (!PHONE_REGEX.test(payload.phone)) {
+      setProfileError("Phone must be exactly 10 digits.");
+      return;
+    }
+    if (!PAN_REGEX.test(payload.panNumber)) {
+      setProfileError("Invalid PAN format. Enter in format ABCDE1234F.");
+      return;
+    }
+    if (!payload.address) {
+      setProfileError("Address is required.");
+      return;
+    }
+    if (!payload.employmentType) {
+      setProfileError("Employment type is required.");
+      return;
+    }
+    if (!Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
+      setProfileError("Monthly income must be a positive number.");
+      return;
+    }
+
+    setProfileBusy(true);
+    try {
+      const res = await customerApi.updateMyProfile(payload);
+      const updated = res?.data?.data || profile;
+      setProfile(updated);
+      setProfileForm({
+        fullName: updated?.fullName || "",
+        phone: updated?.phone || "",
+        panNumber: updated?.panNumber || "",
+        address: updated?.address || "",
+        employmentType: updated?.employmentType || "",
+        monthlyIncome: updated?.monthlyIncome ?? "",
+      });
+      setProfileSuccess("Profile updated successfully.");
+      setEditing(false);
+    } catch (e) {
+      setProfileError(extractErrorMessage(e, "Failed to update profile"));
+    } finally {
+      setProfileBusy(false);
+    }
+  };
 
   const paginatedEMI = useMemo(() => {
     const installments = schedule?.installments || [];
@@ -81,9 +268,167 @@ export default function UserDashboard() {
     return installments.slice(start, start + pageSize);
   }, [schedule, currentPage]);
 
-  const totalPages = Math.ceil((schedule?.installments?.length || 0) / pageSize);
+  const txPageSize = 6;
+  const paginatedTransactions = useMemo(() => {
+    const start = (txPage - 1) * txPageSize;
+    return myTransactions.slice(start, start + txPageSize);
+  }, [myTransactions, txPage]);
+  const txTotalPages = Math.ceil((myTransactions.length || 0) / txPageSize);
 
-  const handleFileDownload = (id, name) => fileApi.download(id, name).catch(() => alert("Download failed"));
+  const totalPages = Math.ceil((schedule?.installments?.length || 0) / pageSize);
+  const isScheduleFullyPaid = useMemo(() => {
+    const items = schedule?.installments || [];
+    if (!items.length) return false;
+    return items.every((ins) => String(ins?.status || "").toUpperCase() === "PAID");
+  }, [schedule]);
+  const pendingAmount = (ins) => {
+    const total = Number(ins?.totalAmount || 0);
+    const paid = Number(ins?.paidAmount || 0);
+    return Math.max(0, total - paid);
+  };
+  const unpaidInstallments = useMemo(
+    () => (schedule?.installments || []).filter((ins) => String(ins?.status || "").toUpperCase() !== "PAID"),
+    [schedule]
+  );
+  const nextPayableInstallment = unpaidInstallments[0] || null;
+  const advanceCapCount = 4;
+  const advanceEligibleInstallments = useMemo(
+    () => unpaidInstallments.slice(0, advanceCapCount),
+    [unpaidInstallments]
+  );
+  const maxAdvanceAmount = useMemo(
+    () => advanceEligibleInstallments.reduce((sum, ins) => sum + pendingAmount(ins), 0),
+    [advanceEligibleInstallments]
+  );
+
+  useEffect(() => {
+    if (!activeLoanId || !isScheduleFullyPaid) return;
+
+    // Reflect closure immediately in UI, then sync from backend.
+    setMyLoans((prev) =>
+      prev.map((loan) => (loan.id === activeLoanId ? { ...loan, status: "CLOSED" } : loan))
+    );
+
+    loanApi
+      .getMyLoans()
+      .then((res) => setMyLoans(res?.data || []))
+      .catch(() => {});
+  }, [activeLoanId, isScheduleFullyPaid]);
+
+  const handleFileDownload = (id, name) =>
+    fileApi.download(id, name).catch((err) => alert(extractErrorMessage(err, "Download failed.")));
+  const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
+
+  const openAgreementModal = (loan) => {
+    setAgreementLoan(loan);
+    setAgreementName(profile?.fullName || user?.username || "");
+    setAgreementError("");
+  };
+
+  const closeAgreementModal = (force = false) => {
+    if (agreementBusy && !force) return;
+    setAgreementLoan(null);
+    setAgreementName("");
+    setAgreementError("");
+  };
+
+  const submitAgreementAcceptance = async () => {
+    if (!agreementLoan?.id) return;
+    const signer = agreementName.trim();
+    if (!signer) {
+      setAgreementError("Please type your full name to accept.");
+      return;
+    }
+
+    setAgreementBusy(true);
+    setAgreementError("");
+    try {
+      await loanApi.acceptAgreement(agreementLoan.id, { acceptedName: signer });
+      const freshLoans = await loanApi.getMyLoans();
+      setMyLoans(freshLoans?.data || []);
+      closeAgreementModal(true);
+    } catch (e) {
+      setAgreementError(extractErrorMessage(e, "Agreement acceptance failed."));
+    } finally {
+      setAgreementBusy(false);
+    }
+  };
+//kyc ---
+  const KYC_MAX_ATTEMPTS = 2;  
+  const KYC_COOLDOWN_MONTHS = 3;
+  const attemptsUsed = Number(myKyc?.submissionCount || 0);
+  const lastSubmittedAt = myKyc?.submittedAt ? new Date(myKyc.submittedAt) : null;
+  const nextEligibleAt = lastSubmittedAt ? new Date(lastSubmittedAt) : null;
+  if (nextEligibleAt) nextEligibleAt.setMonth(nextEligibleAt.getMonth() + KYC_COOLDOWN_MONTHS);
+  const kycLocked = attemptsUsed >= KYC_MAX_ATTEMPTS && nextEligibleAt && new Date() < nextEligibleAt;
+
+  const resetKycEditing = () => {
+    setKycEditing(false);
+    setKycError("");
+    setKycSuccess("");
+    setPanFile(null);
+    setAadhaarFile(null);
+    if (myKyc) {
+      setKycForm({
+        fullName: myKyc?.fullName || "",
+        dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
+        panNumber: myKyc?.panNumber || "",
+        aadhaarNumber: myKyc?.aadhaarNumber || "",
+      });
+    }
+  };
+
+  const submitKyc = async () => {
+    setKycError("");
+    setKycSuccess("");
+
+    const payload = {
+      fullName: kycForm.fullName.trim(),
+      dob: kycForm.dob,
+      panNumber: kycForm.panNumber.trim().toUpperCase(), //UPPERCASE--
+      aadhaarNumber: kycForm.aadhaarNumber.trim(),
+    };
+//VALIDATION..
+    if (!payload.fullName) {
+      setKycError("Full name is required.");
+      return;
+    }
+    if (!payload.dob) {
+      setKycError("Date of birth is required.");
+      return;
+    }
+    if (!PAN_REGEX.test(payload.panNumber)) {
+      setKycError("Invalid PAN format. Enter in format ABCDE1234F.");
+      return;
+    }
+    if (!AADHAAR_REGEX.test(payload.aadhaarNumber)) {
+      setKycError("Aadhaar must be exactly 12 digits.");
+      return;
+    }
+    if (!panFile || !aadhaarFile) {
+      setKycError("Upload both PAN and Aadhaar documents.");
+      return;
+    }
+    if (kycLocked) {
+      setKycError(`KYC updates are locked until ${formatDate(nextEligibleAt)}.`);
+      return;
+    }
+
+    setKycBusy(true);
+    try {
+      const res = await kycApi.submit(payload, panFile, aadhaarFile);
+      const updated = res?.data?.data || null;
+      if (updated) setMyKyc(updated);
+      setKycSuccess("KYC submitted successfully.");
+      setKycEditing(false);
+      setPanFile(null);
+      setAadhaarFile(null);
+    } catch (e) {
+      setKycError(extractErrorMessage(e, "KYC submission failed"));
+    } finally {
+      setKycBusy(false);
+    }
+  };
 
   // --- UI ATOMS ---
   const SidebarButton = ({ id, label, icon: Icon }) => (
@@ -113,17 +458,8 @@ export default function UserDashboard() {
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2" />
         <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-700 mb-2">Institutional Workspace</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-700 mb-2"></p>
             <h2 className="text-3xl font-serif text-slate-900">Welcome, {user?.username || profile?.fullName}</h2>
-          </div>
-          <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-3xl border border-slate-200">
-            <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white shadow-lg border border-emerald-500">
-              <Wallet size={24} />
-            </div>
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none mb-1">Total Balance</p>
-              <p className="text-2xl font-black text-slate-900 leading-none">{money(profile?.bankBalance)}</p>
-            </div>
           </div>
         </div>
       </section>
@@ -134,6 +470,7 @@ export default function UserDashboard() {
           <SidebarButton id="profile" label="Profile" icon={User} />
           <SidebarButton id="kyc" label="KYC Hub" icon={ShieldCheck} />
           <SidebarButton id="loans" label="My Loans" icon={Landmark} />
+          <SidebarButton id="transactions" label="Transactions" icon={FileText} />
           <SidebarButton id="repayments" label="Payments" icon={ReceiptIndianRupee} />
         </aside>
 
@@ -147,18 +484,60 @@ export default function UserDashboard() {
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
                   <div className="flex justify-between items-center mb-10">
                     <h3 className="text-xl font-bold text-slate-900 tracking-tight">Identity Information</h3>
-                    <button onClick={() => setEditing(!editing)} className="text-[10px] font-black uppercase tracking-widest px-6 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-900 hover:text-white transition-all shadow-sm">
-                      {editing ? "Discard" : "Modify Details"}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {editing && (
+                        <button
+                          onClick={saveProfile}
+                          disabled={profileBusy}
+                          className="text-[10px] font-black uppercase tracking-widest px-6 py-2.5 rounded-xl border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-sm disabled:opacity-60"
+                        >
+                          {profileBusy ? "Saving..." : "Save"}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => (editing ? resetProfileEdit() : setEditing(true))}
+                        className="text-[10px] font-black uppercase tracking-widest px-6 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                      >
+                        {editing ? "Discard" : "Modify Details"}
+                      </button>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <InfoBox label="Legal Name" value={profile?.fullName} />
-                    <InfoBox label="Contact" value={profile?.phone} />
-                    <InfoBox label="Tax ID (PAN)" value={maskPanNumber(profile?.panNumber)} />
-                    <InfoBox label="Employment" value={profile?.employmentType} />
-                    <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
-                    <InfoBox label="CIBIL Score" value={profile?.creditScore} />
-                  </div>
+                  {profileError && <p className="mb-4 text-sm font-semibold text-rose-600">{profileError}</p>}
+                  {profileSuccess && <p className="mb-4 text-sm font-semibold text-emerald-700">{profileSuccess}</p>}
+
+                  {editing ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Field label="Legal Name">
+                        <input value={profileForm.fullName} onChange={(e) => handleProfileField("fullName", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Contact">
+                        <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Pan Number">
+                        <input value={profileForm.panNumber} onChange={(e) => handleProfileField("panNumber", e.target.value.toUpperCase())} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Employment">
+                        <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Income">
+                        <input type="number" min="1" value={profileForm.monthlyIncome} onChange={(e) => handleProfileField("monthlyIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <Field label="Address">
+                        <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
+                      <InfoBox label="CIBIL Score" value={profile?.creditScore} />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <InfoBox label="Legal Name" value={profile?.fullName} />
+                      <InfoBox label="Contact" value={profile?.phone} />
+                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} /> {/*maskinggg */}
+                      <InfoBox label="Employment" value={profile?.employmentType} />
+                      <InfoBox label="Income" value={money(profile?.monthlyIncome)} />
+                      <InfoBox label="Address" value={profile?.address} />
+                      <InfoBox label="CIBIL Score" value={profile?.creditScore} />
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -169,16 +548,40 @@ export default function UserDashboard() {
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
                   <div className="flex justify-between items-center mb-8">
                     <h3 className="text-xl font-bold text-slate-900">Verification Hub</h3>
-                    <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${KYC_META[myKyc?.status || 'PENDING'].cls}`}>
-                       {KYC_META[myKyc?.status || 'PENDING'].icon} {KYC_META[myKyc?.status || 'PENDING'].label}
+                    <div className="flex items-center gap-3">
+                      {myKyc && (
+                        <button
+                          disabled={kycLocked}
+                          onClick={() => setKycEditing((v) => !v)}
+                          className="text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-900 hover:text-white transition-all disabled:opacity-50"
+                        >
+                          {kycEditing ? "Cancel Edit" : "Modify KYC"}
+                        </button>
+                      )}
+                      <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${myKyc ? KYC_META[myKyc?.status || 'PENDING'].cls : "bg-slate-100 text-slate-700 border-slate-200"}`}>
+                        {myKyc ? KYC_META[myKyc?.status || "PENDING"].icon : <AlertCircle size={14} />} {myKyc ? KYC_META[myKyc?.status || "PENDING"].label : "NOT SUBMITTED"}
+                      </div>
                     </div>
                   </div>
+
+                  <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <InfoBox label="Submission State" value={myKyc ? "Submitted" : "Not Submitted"} />
+                    <InfoBox label="Attempts Used" value={`${attemptsUsed}/${KYC_MAX_ATTEMPTS}`} />
+                    <InfoBox label="Next Eligible Update" value={kycLocked ? formatDate(nextEligibleAt) : "Available"} />
+                  </div>
+                  {kycLocked && (
+                    <p className="mb-4 text-sm font-semibold text-amber-700">
+                      You reached the maximum KYC update attempts. You can modify again after {formatDate(nextEligibleAt)}.
+                    </p>
+                  )}
+                  {kycError && <p className="mb-4 text-sm font-semibold text-rose-600">{kycError}</p>}
+                  {kycSuccess && <p className="mb-4 text-sm font-semibold text-emerald-700">{kycSuccess}</p>}
 
                   {myKyc && !kycEditing ? (
                     <div className="space-y-8">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <InfoBox label="Holder" value={myKyc.fullName} />
-                        <InfoBox label="PAN" value={maskPanNumber(myKyc.panNumber)} />
+                        <InfoBox label="PAN" value={maskPanNumber(myKyc.panNumber)} /> 
                         <InfoBox label="Aadhaar" value={maskAadhaarNumber(myKyc.aadhaarNumber)} />
                         <InfoBox label="DOB" value={formatDate(myKyc.dob)} />
                       </div>
@@ -190,12 +593,80 @@ export default function UserDashboard() {
                   ) : (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <Field label="Full Name"><input className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" placeholder="As per PAN" /></Field>
-                        <Field label="DOB"><input type="date" className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" /></Field>
-                        <Field label="PAN Card (PDF)"><div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors"><UploadCloud className="text-slate-400 mb-2"/><span className="text-[10px] text-slate-500 font-bold uppercase">Upload PDF</span><input type="file" className="absolute inset-0 opacity-0 cursor-pointer" /></div></Field>
-                        <Field label="Aadhaar Card (PDF)"><div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors"><UploadCloud className="text-slate-400 mb-2"/><span className="text-[10px] text-slate-500 font-bold uppercase">Upload PDF</span><input type="file" className="absolute inset-0 opacity-0 cursor-pointer" /></div></Field>
+                        <Field label="Full Name">
+                          <input
+                            value={kycForm.fullName}
+                            onChange={(e) => handleKycField("fullName", e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="As per PAN"
+                          />
+                        </Field>
+                        <Field label="DOB">
+                          <input
+                            type="date"
+                            value={kycForm.dob}
+                            onChange={(e) => handleKycField("dob", e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                          />
+                        </Field>
+                        <Field label="PAN Number">
+                          <input
+                            value={kycForm.panNumber}
+                            onChange={(e) => handleKycField("panNumber", e.target.value.toUpperCase())}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="ABCDE1234F"
+                          />
+                        </Field>
+                        <Field label="Aadhaar Number">
+                          <input
+                            value={kycForm.aadhaarNumber}
+                            onChange={(e) => handleKycField("aadhaarNumber", e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                            placeholder="12 digit Aadhaar"
+                          />
+                        </Field>
+                        <Field label="PAN Card (PDF)">
+                          <div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors">
+                            <UploadCloud className="text-slate-400 mb-2"/>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">{panFile?.name || "Upload PDF"}</span>
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              onChange={(e) => setPanFile(e.target.files?.[0] || null)}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                          </div>
+                        </Field>
+                        <Field label="Aadhaar Card (PDF)">
+                          <div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors">
+                            <UploadCloud className="text-slate-400 mb-2"/>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">{aadhaarFile?.name || "Upload PDF"}</span>
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              onChange={(e) => setAadhaarFile(e.target.files?.[0] || null)}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                          </div>
+                        </Field>
                       </div>
-                      <button className="bg-slate-900 text-white px-10 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all">Submit Verification</button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          disabled={kycBusy || kycLocked}
+                          onClick={submitKyc}
+                          className="bg-slate-900 text-white px-10 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all disabled:opacity-60"
+                        >
+                          {kycBusy ? "Submitting..." : "Submit Verification"}
+                        </button>
+                        {kycEditing && (
+                          <button
+                            onClick={resetKycEditing}
+                            className="px-6 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 transition-all"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -221,7 +692,18 @@ export default function UserDashboard() {
                           <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
                           <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
                           <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
-                          <td className="p-6 text-right"><button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button></td>
+                          <td className="p-6 text-right">
+                            {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
+                              <button
+                                onClick={() => openAgreementModal(l)}
+                                className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
+                              >
+                                Accept Agreement
+                              </button>
+                            ) : (
+                              <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -230,7 +712,87 @@ export default function UserDashboard() {
               </motion.div>
             )}
 
-            {/* 4. REPAYMENTS */}
+            {/* 4. TRANSACTIONS */}
+            {activeTab === "transactions" && (
+              <motion.div key="transactions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
+                <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
+                  <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-slate-900">Customer Transactions</h3>
+                      <p className="text-xs text-slate-500">Only repayment entries made by you.</p>
+                    </div>
+                    <button
+                      onClick={loadMyTransactions}
+                      disabled={txLoading}
+                      className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                    >
+                      {txLoading ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  {txError && (
+                    <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
+                  )}
+
+                  {txLoading ? (
+                    <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
+                  ) : myTransactions.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4">Date & Time</th>
+                            <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Transaction Ref</th>
+                            <th className="px-6 py-4">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginatedTransactions.map((tx, idx) => (
+                            <tr key={`${tx?.id || tx?.transactionId || "tx"}-${idx}`} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 text-sm text-slate-700">{tx?.paymentDate ? new Date(tx.paymentDate).toLocaleString("en-IN") : "-"}</td>
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-800">
+                                {Number(tx?.amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx?.txRef || "-"}</td>
+                              <td className="px-6 py-4 text-xs text-slate-600">{tx?.txDetails || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-10 text-center text-sm text-slate-500">No repayment records found.</div>
+                  )}
+
+                  {!!myTransactions.length && txTotalPages > 1 && (
+                    <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Page {txPage} of {txTotalPages}
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          disabled={txPage === 1}
+                          onClick={() => setTxPage((p) => p - 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <button
+                          disabled={txPage >= txTotalPages}
+                          onClick={() => setTxPage((p) => p + 1)}
+                          className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* 5. REPAYMENTS */}
             {activeTab === "repayments" && (
               <motion.div key="repayments" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
@@ -239,6 +801,68 @@ export default function UserDashboard() {
                     <option value="">Select an active facility...</option>
                     {myLoans.map(l => <option key={l.id} value={l.id}>{l.loanProductName} ({money(l.requestedAmount)})</option>)}
                   </select>
+
+                  {activeLoanId && (
+                    <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
+                        Pay Multiple EMIs (Up To 4 Months)
+                      </p>
+                      <p className="mb-3 text-xs font-semibold text-slate-600">
+                        You can pay up to the next {Math.min(advanceCapCount, unpaidInstallments.length)} EMIs in advance.
+                        Max now: {money(maxAdvanceAmount)}
+                      </p>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {advanceEligibleInstallments.map((_, idx) => {
+                          const count = idx + 1;
+                          const suggestedAmount = advanceEligibleInstallments
+                            .slice(0, count)
+                            .reduce((sum, item) => sum + pendingAmount(item), 0);
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => setBulkAmount(String(suggestedAmount.toFixed(2)))}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-100"
+                            >
+                              {count} Month
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex flex-col gap-3 md:flex-row">
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          value={bulkAmount}
+                          onChange={(e) => setBulkAmount(e.target.value)}
+                          placeholder="Enter amount (e.g. 120000)"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-emerald-500 outline-none transition-colors"
+                        />
+                        <button
+                          disabled={actionBusy}
+                          onClick={async () => {
+                            const amount = Number(bulkAmount || 0);
+                            if (!Number.isFinite(amount) || amount <= 0) return;
+                            if (amount > maxAdvanceAmount) return;
+                            const ok = await payCustomAmount(amount);
+                            if (ok) setBulkAmount("");
+                          }}
+                          className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:border-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          Pay Custom Amount
+                        </button>
+                      </div>
+                      {actionError && (
+                        <p className="mt-2 text-xs font-semibold text-rose-600">{actionError}</p>
+                      )}
+                      {!!bulkAmount && Number(bulkAmount) > maxAdvanceAmount && (
+                        <p className="mt-2 text-xs font-semibold text-rose-600">
+                          Custom amount cannot exceed {money(maxAdvanceAmount)} (next 4 EMIs cap).
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {schedule?.installments ? (
                     <div className="space-y-4">
@@ -253,7 +877,7 @@ export default function UserDashboard() {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${ins.status === 'PAID' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600 border-slate-300'}`}>{ins.status}</span>
-                            {ins.status !== 'PAID' && (
+                            {nextPayableInstallment && ins.installmentNumber === nextPayableInstallment.installmentNumber && (
                               <button onClick={() => payInstallment(ins)} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all">Pay EMI</button>
                             )}
                           </div>
@@ -293,6 +917,47 @@ export default function UserDashboard() {
           </AnimatePresence>
         </main>
       </div>
+
+      {agreementLoan && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-xl rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-700 mb-2">Loan Agreement</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-3">Accept Loan Terms</h3>
+            <p className="text-sm text-slate-600 mb-5">
+              Your loan is approved. Please confirm your agreement by typing your full name.
+            </p>
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Loan: <span className="font-semibold">{agreementLoan?.loanProductName || "-"}</span>
+            </div>
+            <input
+              type="text"
+              value={agreementName}
+              onChange={(e) => setAgreementName(e.target.value)}
+              placeholder="Type your full name"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500"
+            />
+            {agreementError && (
+              <p className="mt-3 text-sm font-semibold text-rose-600">{agreementError}</p>
+            )}
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={closeAgreementModal}
+                disabled={agreementBusy}
+                className="rounded-xl border border-slate-300 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitAgreementAcceptance}
+                disabled={agreementBusy}
+                className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-emerald-700 hover:border-emerald-600 disabled:opacity-60"
+              >
+                {agreementBusy ? "Accepting..." : "Accept Agreement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }

@@ -1,6 +1,5 @@
 package com.trumio.lms.exception;
 
-
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -43,6 +42,10 @@ public enum ErrorCode {
     EMI_NOT_FOUND("PAY_003", "EMI installment not found", HttpStatus.NOT_FOUND),
     INSUFFICIENT_WALLET_BALANCE("PAY_004", "Insufficient wallet balance", HttpStatus.BAD_REQUEST),
 
+    // Stripe / Payment Gateway
+    STRIPE_API_ERROR("PAY_005", "Stripe payment processing error", HttpStatus.BAD_GATEWAY),
+    STRIPE_SESSION_NOT_FOUND("PAY_006", "Stripe session not found", HttpStatus.NOT_FOUND),
+    STRIPE_PAYMENT_NOT_COMPLETED("PAY_007", "Stripe payment not completed", HttpStatus.BAD_REQUEST),
 
     // Media
     FILE_UPLOAD_FAILED("FILE_001", "File upload failed", HttpStatus.INTERNAL_SERVER_ERROR),

@@ -1,4 +1,4 @@
-const onlyDigits = (value) => String(value || "").replace(/\D/g, "");
+const onlyDigits = (value) => String(value || "").replace(/\D/g, ""); //usedforaadhar
 
 export const maskPanNumber = (value) => {
   const pan = String(value || "").toUpperCase().trim();

@@ -34,9 +34,9 @@ public class KycController {
      */
     @PostMapping(value = "/submit", consumes = {"multipart/form-data"})
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<ApiResponse<KycResponse>> submitKyc(
-            @Valid @ModelAttribute KycRequest request, //read tetxt filed...name...  Read text fields from multipart request
-            @RequestParam("panDocument") MultipartFile panDocument, //extract and  file size and file type conetnt
+    public ResponseEntity<ApiResponse<KycResponse>> submitKyc(  //hhtreq-wrapper(suuces true--message--kycsrsp-actualdata
+            @Valid @ModelAttribute KycRequest request, //valid-@noblanl//read tetxt filed...name...  Read text fields from multipart request
+            @RequestParam("panDocument") MultipartFile panDocument, //extract and  file size and file type conetnt //value from req
             @RequestParam("aadhaarDocument") MultipartFile aadhaarDocument) {
         return ResponseEntity.ok(kycService.submitKyc(request, panDocument, aadhaarDocument));
     }
