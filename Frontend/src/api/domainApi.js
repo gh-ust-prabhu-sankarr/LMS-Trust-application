@@ -145,6 +145,32 @@ export const fileApi = {
     a.remove();
     window.URL.revokeObjectURL(blobUrl);
   },
+
+  getPreviewSource: async (fileId) => {
+    const res = await api.get(`/files/download/${fileId}`, { responseType: "blob" });
+    const disposition = res?.headers?.["content-disposition"] || "";
+    const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
+    const filenameMatch = disposition.match(/filename=\"?([^"]+)\"?/i);
+    const fileName = filenameMatch?.[1] || "document";
+    const inferredType =
+      contentType && contentType !== "application/octet-stream"
+        ? contentType
+        : fileName.toLowerCase().endsWith(".pdf")
+        ? "application/pdf"
+        : "application/octet-stream";
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: inferredType }));
+    return { blobUrl, contentType: inferredType, fileName };
+  },
+
+  openInNewTab: async (fileId, targetWindow = null) => {
+    const { blobUrl } = await fileApi.getPreviewSource(fileId);
+    if (targetWindow && !targetWindow.closed) {
+      targetWindow.location.replace(blobUrl);
+    } else {
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    }
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+  },
 };
 
 // ---------------- ADMIN API ----------------

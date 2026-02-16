@@ -54,6 +54,14 @@ export default function PaySuccess() {
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    if (status !== "OK") return;
+    const timer = setTimeout(() => {
+      navigate("/dashboard", { replace: true, state: { tab: "repayments" } });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [status, navigate]);
+
   return (
     <PortalShell title="Payment Status" subtitle="Stripe payment verification">
       <div className="max-w-2xl mx-auto rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_20px_50px_-25px_rgba(15,23,42,0.25)]">
@@ -89,6 +97,11 @@ export default function PaySuccess() {
         </h2>
 
         <p className="mt-2 text-sm text-slate-600">{message}</p>
+        {status === "OK" ? (
+          <p className="mt-2 text-xs text-emerald-700 font-semibold">
+            Redirecting to dashboard...
+          </p>
+        ) : null}
 
         {status === "ERROR" && sessionId && (
           <button

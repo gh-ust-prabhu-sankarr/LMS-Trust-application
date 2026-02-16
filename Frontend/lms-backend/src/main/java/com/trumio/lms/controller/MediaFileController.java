@@ -37,12 +37,10 @@ public class MediaFileController {
     public ResponseEntity<ApiResponse<MediaFile>> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("entityType") String entityType,
-            @RequestParam("entityId") String entityId,
-            @RequestParam(value = "displayName", required = false) String displayName) {
+            @RequestParam("entityId") String entityId) {
 
         String userId = getCurrentUserId();
-        // Call service layer to upload and save file
-        MediaFile uploaded = mediaFileService.uploadFile(file, entityType, entityId, userId, displayName);
+        MediaFile uploaded = mediaFileService.uploadFile(file, entityType, entityId, userId);
 
         return ResponseEntity.ok(ApiResponse.success("File uploaded successfully", uploaded));
     }
@@ -53,18 +51,13 @@ public class MediaFileController {
     @GetMapping("/download/{fileId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Resource> downloadFile(@PathVariable String fileId) {
-        // Fetch file metadata from DB (name, type, etc.)
         MediaFile mediaFile = mediaFileService.getFileById(fileId);
-        // Get actual file bytes
         byte[] fileData = mediaFileService.downloadFile(fileId);
 
-        // Wrap byte array in Spring Resource
         ByteArrayResource resource = new ByteArrayResource(fileData);
 
         return ResponseEntity.ok()
-                // Set correct content type (e.g., application/pdf, image/png)
                 .contentType(MediaType.parseMediaType(mediaFile.getFileType()))
-                // Force browser to download file with correct name
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + mediaFile.getFileName() + "\"")
                 .body(resource);
