@@ -81,6 +81,7 @@ const EMPLOYMENT_TYPE_OPTIONS = [
 ];
 const ANNUAL_INCOME_MIN = 300000;
 const ANNUAL_INCOME_MAX = 20000000;
+const PHONE_REGEX = /^[6-9][0-9]{9}$/;
 
 const pickFirstNonEmpty = (...values) => {
   for (const value of values) { 
@@ -264,6 +265,13 @@ export default function UserDashboard() {
     setKycForm((prev) => toKycForm(myKyc, profile, user, prev));
   }, [myKyc, profile, user]);
 
+  useEffect(() => {
+    setProfileForm((prev) => ({
+      ...prev,
+      panNumber: pickFirstNonEmpty(prev?.panNumber, profile?.panNumber, myKyc?.panNumber),
+    }));
+  }, [profile?.panNumber, myKyc?.panNumber]);
+
   const handleProfileField = (key, value) => {
     setProfileForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -282,19 +290,34 @@ export default function UserDashboard() {
     const payload = {
       fullName: profileForm.fullName.trim(),
       phone: profileForm.phone.trim(),
-      panNumber: profileForm.panNumber.trim().toUpperCase(),
       address: profileForm.address.trim(),
       employmentType: profileForm.employmentType.trim(),
       monthlyIncome: monthlyFromAnnual(profileForm.annualIncome),
     };
     const annualIncome = Number(profileForm.annualIncome);
 
-    if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType || !Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
-      setProfileError("Fill all profile fields with valid values.");
+    if (!payload.fullName) {
+      setProfileError("Legal name is required.");
+      return;
+    }
+    if (!PHONE_REGEX.test(payload.phone)) {
+      setProfileError("Contact must be a valid 10-digit mobile number.");
+      return;
+    }
+    if (!payload.employmentType) {
+      setProfileError("Employment type is required.");
       return;
     }
     if (!Number.isFinite(annualIncome) || annualIncome < ANNUAL_INCOME_MIN || annualIncome > ANNUAL_INCOME_MAX) {
       setProfileError(`Annual income must be between ${ANNUAL_INCOME_MIN.toLocaleString("en-IN")} and ${ANNUAL_INCOME_MAX.toLocaleString("en-IN")}.`);
+      return;
+    }
+    if (!payload.address) {
+      setProfileError("Address is required.");
+      return;
+    }
+    if (!Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
+      setProfileError("Annual income must be a valid positive amount.");
       return;
     }
 

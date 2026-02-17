@@ -33,19 +33,27 @@ public class CustomerService {
         }
 
         Customer existing = customerRepository.findByUserId(user.getId()).orElse(null);
-        String normalizedPan = request.getPanNumber().toUpperCase();
+        String normalizedPan = request.getPanNumber() == null ? null : request.getPanNumber().trim().toUpperCase();
+        if (normalizedPan != null && normalizedPan.isEmpty()) {
+            normalizedPan = null;
+        }
 
-        customerRepository.findByPanNumber(normalizedPan).ifPresent(owner -> {
-            if (existing == null || !owner.getId().equals(existing.getId())) {
-                throw new BusinessException(ErrorCode.INVALID_PAN, "PAN already registered");
-            }
-        });
+        if (normalizedPan != null) {
+            String finalNormalizedPan = normalizedPan;
+            customerRepository.findByPanNumber(finalNormalizedPan).ifPresent(owner -> {
+                if (existing == null || !owner.getId().equals(existing.getId())) {
+                    throw new BusinessException(ErrorCode.INVALID_PAN, "PAN already registered");
+                }
+            });
+        }
 
         Customer customer = existing != null ? existing : new Customer();
         customer.setUserId(user.getId());
         customer.setFullName(request.getFullName());
         customer.setPhone(request.getPhone());
-        customer.setPanNumber(normalizedPan);
+        if (normalizedPan != null) {
+            customer.setPanNumber(normalizedPan);
+        }
         customer.setAddress(request.getAddress());
         customer.setEmploymentType(request.getEmploymentType());
         customer.setMonthlyIncome(request.getMonthlyIncome());
