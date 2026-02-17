@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Data
 @Builder
@@ -32,6 +33,9 @@ public class AuditLog {
     private String entityId;
 
     private String details;
+
+    private Map<String, Object> requestSnapshot;
+    private Map<String, Object> responseSnapshot;
 
     @Indexed
     private LocalDateTime timestamp;

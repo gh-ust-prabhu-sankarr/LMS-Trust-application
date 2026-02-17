@@ -7,6 +7,7 @@ import com.trumio.lms.dto.LoanAgreementAcceptRequest;
 import com.trumio.lms.dto.LoanApprovalRequest;
 import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.enums.LoanStatus;
+import com.trumio.lms.idempotency.Idempotent;
 import com.trumio.lms.service.LoanApplicationService;
 import com.trumio.lms.service.LoanWorkflowService;
 import jakarta.validation.Valid;
@@ -27,6 +28,7 @@ public class LoanApplicationController {
 
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
+    @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> createApplication(
             @Valid @RequestBody LoanApplicationRequest request) {
         return ResponseEntity.ok(loanApplicationService.createApplication(request));
@@ -34,6 +36,7 @@ public class LoanApplicationController {
 
     @PostMapping("/{loanId}/submit")
     @PreAuthorize("hasRole('CUSTOMER')")
+    @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> submitApplication(@PathVariable String loanId) {
         return ResponseEntity.ok(loanApplicationService.submitApplication(loanId));
     }
@@ -65,12 +68,14 @@ public class LoanApplicationController {
 
     @PostMapping("/{loanId}/review")
     @PreAuthorize("hasAnyRole('CREDIT_OFFICER', 'ADMIN')")
+    @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> moveToReview(@PathVariable String loanId) {
         return ResponseEntity.ok(loanWorkflowService.moveToReview(loanId));
     }
 
     @PostMapping("/{loanId}/approve")
     @PreAuthorize("hasAnyRole('CREDIT_OFFICER', 'ADMIN')")
+    @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> approveLoan(
             @PathVariable String loanId,
             @Valid @RequestBody LoanApprovalRequest request) {
@@ -79,6 +84,7 @@ public class LoanApplicationController {
 
     @PostMapping("/{loanId}/reject")
     @PreAuthorize("hasAnyRole('CREDIT_OFFICER', 'ADMIN')")
+    @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> rejectLoan(
             @PathVariable String loanId,
             @RequestParam String reason) {
@@ -87,6 +93,7 @@ public class LoanApplicationController {
 
     @PostMapping("/{loanId}/disburse")
     @PreAuthorize("hasRole('ADMIN')")
+    @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> disburseLoan(@PathVariable String loanId) {
         return ResponseEntity.ok(loanWorkflowService.disburseLoan(loanId));
     }
