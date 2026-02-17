@@ -754,37 +754,41 @@ export default function UserDashboard() {
             {activeTab === "loans" && (
               <motion.div key="loans" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        <th className="p-6">Loan Facility</th>
-                        <th className="p-6">Principal</th>
-                        <th className="p-6">Status</th>
-                        <th className="p-6 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {myLoans.map(l => (
-                        <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
-                          <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
-                          <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
-                          <td className="p-6 text-right">
-                            {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
-                              <button
-                                onClick={() => openAgreementModal(l)}
-                                className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
-                              >
-                                Accept Agreement
-                              </button>
-                            ) : (
-                              <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
-                            )}
-                          </td>
+                  {myLoans.length === 0 ? (
+                    <div className="p-10 text-center text-sm text-slate-500">No loans applied yet.</div>
+                  ) : (
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          <th className="p-6">Loan Facility</th>
+                          <th className="p-6">Principal</th>
+                          <th className="p-6">Status</th>
+                          <th className="p-6 text-right">Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {myLoans.map(l => (
+                          <tr key={l.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
+                            <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
+                            <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
+                            <td className="p-6 text-right">
+                              {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
+                                <button
+                                  onClick={() => openAgreementModal(l)}
+                                  className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
+                                >
+                                  Accept Agreement
+                                </button>
+                              ) : (
+                                <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </motion.div>
             )}
