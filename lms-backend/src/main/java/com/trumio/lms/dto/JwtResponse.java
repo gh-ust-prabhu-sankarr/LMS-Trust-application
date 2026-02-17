@@ -3,6 +3,7 @@ package com.trumio.lms.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.Builder.Default;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -12,6 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class JwtResponse {
     private String token;
+    @Default
     private String type = "Bearer";
     private String username;
     private String email;

@@ -15,6 +15,7 @@ public class UserProfileResponse {
     private String id;
     private String username;
     private String email;
+    private String phone;
     private Role role;
     private KYCStatus kycStatus;
     private Boolean active;

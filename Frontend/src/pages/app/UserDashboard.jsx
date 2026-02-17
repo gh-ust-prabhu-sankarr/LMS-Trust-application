@@ -77,11 +77,13 @@ const EMPLOYMENT_TYPE_OPTIONS = [
   "Self-Employed",
   "Business",
   "Student",
- 
+  
 ];
+const ANNUAL_INCOME_MIN = 300000;
+const ANNUAL_INCOME_MAX = 20000000;
 
 const pickFirstNonEmpty = (...values) => {
-  for (const value of values) {
+  for (const value of values) { 
     const text = String(value ?? "").trim();
     if (text) return text;
   }
@@ -178,16 +180,17 @@ export default function UserDashboard() {
 
       let loadedProfile = null;
       if (pRes.status === "fulfilled") {
-        loadedProfile = pRes.value?.data || null;
+        loadedProfile = pRes.value?.data?.data ?? pRes.value?.data ?? null;
         setProfile(loadedProfile);
       }
 
       if (lRes.status === "fulfilled") {
-        setMyLoans(lRes.value?.data || []);
+        setMyLoans(lRes.value?.data?.data ?? lRes.value?.data ?? []);
       }
 
-      if (kRes.status === "fulfilled" && kRes.value?.data) {
-        setMyKyc(kRes.value.data);
+      if (kRes.status === "fulfilled") {
+        const kycData = kRes.value?.data?.data ?? kRes.value?.data ?? null;
+        if (kycData) setMyKyc(kycData);
       }
 
       setProfileForm((prev) => toProfileForm(loadedProfile, user, prev));
@@ -284,9 +287,14 @@ export default function UserDashboard() {
       employmentType: profileForm.employmentType.trim(),
       monthlyIncome: monthlyFromAnnual(profileForm.annualIncome),
     };
+    const annualIncome = Number(profileForm.annualIncome);
 
     if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType || !Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
       setProfileError("Fill all profile fields with valid values.");
+      return;
+    }
+    if (!Number.isFinite(annualIncome) || annualIncome < ANNUAL_INCOME_MIN || annualIncome > ANNUAL_INCOME_MAX) {
+      setProfileError(`Annual income must be between ${ANNUAL_INCOME_MIN.toLocaleString("en-IN")} and ${ANNUAL_INCOME_MAX.toLocaleString("en-IN")}.`);
       return;
     }
 
@@ -560,7 +568,7 @@ export default function UserDashboard() {
                         </select>
                       </Field>
                       <Field label="Annual Income">
-                        <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                        <input type="number" min={ANNUAL_INCOME_MIN} max={ANNUAL_INCOME_MAX} value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
                       <Field label="Address">
                         <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
@@ -569,11 +577,17 @@ export default function UserDashboard() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <InfoBox label="Legal Name" value={profile?.fullName} />
-                      <InfoBox label="Contact" value={profile?.phone} />
+                      <InfoBox
+                        label="Legal Name"
+                        value={pickFirstNonEmpty(profile?.fullName, profileForm?.fullName, fallbackFullNameFromUser(user))}
+                      />
+                      <InfoBox label="Contact" value={pickFirstNonEmpty(profile?.phone, profileForm?.phone, fallbackPhoneFromUser(user))} />
                      
                       <InfoBox label="Employment" value={profile?.employmentType} />
-                      <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
+                      <InfoBox
+                        label="Annual Income"
+                        value={Number(profile?.monthlyIncome) > 0 ? money(annualFromMonthly(profile?.monthlyIncome)) : ""}
+                      />
                       <InfoBox label="Address" value={profile?.address} />
                       <InfoBox label="CIBIL Score" value={profile?.creditScore} />
                     </div>

@@ -79,6 +79,7 @@ export default function Register() {
         username: composedUsername,
         email: form.email.trim(),
         password: form.password,
+        phone: form.phone.trim(),
       });
       navigate("/login", { replace: true });
     } catch (err) {

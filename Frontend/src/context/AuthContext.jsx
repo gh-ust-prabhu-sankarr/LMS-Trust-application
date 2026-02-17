@@ -41,22 +41,18 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      if (role) {
-        localStorage.setItem(ROLE_KEY, role);
-        if (!cancelled) setAuthLoading(false);
-        return;
-      }
+      if (role) localStorage.setItem(ROLE_KEY, role);
 
       try {
         const res = await authApi.me();
         if (cancelled) return;
         const apiUser = res?.data?.data || res?.data || null;
         const resolvedRole = normalizeRole(apiUser?.role || apiUser?.authorities?.[0]);
-        if (resolvedRole) {
+        if (resolvedRole && resolvedRole !== role) {
           setRole(resolvedRole);
           localStorage.setItem(ROLE_KEY, resolvedRole);
-          setUser((prev) => ({ ...(prev || {}), ...apiUser, role: resolvedRole }));
         }
+        setUser((prev) => ({ ...(prev || {}), ...apiUser, role: resolvedRole || role || null }));
       } catch {
         // No-op. If /auth/me is not available, fallback is role from login/token.
       } finally {
