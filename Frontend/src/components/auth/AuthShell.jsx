@@ -60,7 +60,7 @@ export default function AuthShell({
             </p>
 
             <div className="mt-8 flex flex-wrap gap-2">
-              {["KYC Ready", "Fast Approval", "OTP Security", "EMI Tracking", "Audit Safe"].map(
+              {["KYC Ready", "Fast Approval", "EMI Tracking", "Audit Safe"].map(
                 (t) => (
                   <span
                     key={t}

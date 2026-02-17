@@ -72,6 +72,14 @@ const txStatusMeta = (tx) => {
   return { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" };
 };
 
+const EMPLOYMENT_TYPE_OPTIONS = [
+  "Salaried",
+  "Self-Employed",
+  "Business",
+  "Student",
+ 
+];
+
 const pickFirstNonEmpty = (...values) => {
   for (const value of values) {
     const text = String(value ?? "").trim();
@@ -538,7 +546,18 @@ export default function UserDashboard() {
                       </Field>
   
                       <Field label="Employment">
-                        <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                        <select
+                          value={profileForm.employmentType}
+                          onChange={(e) => handleProfileField("employmentType", e.target.value)}
+                          className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
+                        >
+                          <option value="">Select employment type</option>
+                          {EMPLOYMENT_TYPE_OPTIONS.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
                       </Field>
                       <Field label="Annual Income">
                         <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
