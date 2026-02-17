@@ -142,8 +142,9 @@ const Navbar = () => {
                 className={
                   isRegisterRoute
                     ? "px-8 py-3 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
-                    : "px-8 py-3 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
+                    : "text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 hover:text-emerald-700 transition-all px-2"
                 }
+                
               >
                 Register
               </button>
