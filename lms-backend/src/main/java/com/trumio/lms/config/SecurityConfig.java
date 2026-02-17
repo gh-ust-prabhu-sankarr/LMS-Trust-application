@@ -33,7 +33,7 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @Bean
+    @Bean //When user registers, password is converted into secret coded form (BCrypt).So real password is never stored.
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
