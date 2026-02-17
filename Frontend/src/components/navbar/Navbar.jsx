@@ -1,15 +1,18 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Landmark, UserCircle, LayoutDashboard, Home, LogOut, ChevronDown } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 const Navbar = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, user, role, logout } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
   const effectiveRole = role || user?.role || "CUSTOMER";
+  const isLoginRoute = location.pathname === "/login" || location.pathname.startsWith("/login/");
+  const isRegisterRoute = location.pathname === "/register";
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -124,7 +127,11 @@ const Navbar = () => {
               <button
                 type="button"
                 onClick={() => navigate("/login")}
-                className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 hover:text-emerald-700 transition-all px-2"
+                className={
+                  isLoginRoute
+                    ? "px-8 py-3 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
+                    : "text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 hover:text-emerald-700 transition-all px-2"
+                }
               >
                 Login
               </button>
@@ -132,7 +139,11 @@ const Navbar = () => {
               <button
                 type="button"
                 onClick={() => navigate("/register")}
-                className="px-8 py-3 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
+                className={
+                  isRegisterRoute
+                    ? "px-8 py-3 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
+                    : "px-8 py-3 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-full shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
+                }
               >
                 Register
               </button>

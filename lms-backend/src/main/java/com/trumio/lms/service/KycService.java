@@ -177,7 +177,7 @@ public class KycService {
         customerRepository.findByUserId(saved.getUserId()).ifPresent(customer -> {
             customer.setKycStatus(saved.getStatus());
             if (saved.getStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
-                customer.setCreditScore(650 + new java.util.Random().nextInt(251));
+                customer.setCreditScore(650 + new java.util.Random().nextInt(151));
             }
             customer.setUpdatedAt(LocalDateTime.now());
             customerRepository.save(customer);

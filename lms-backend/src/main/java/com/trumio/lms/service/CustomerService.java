@@ -70,7 +70,7 @@ public class CustomerService {
         Customer customer = customerRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
         if (customer.getKycStatus() == KYCStatus.APPROVED && customer.getCreditScore() == null) {
-            customer.setCreditScore(650 + new java.util.Random().nextInt(251));
+            customer.setCreditScore(650 + new java.util.Random().nextInt(151));
             customer.setUpdatedAt(LocalDateTime.now());
             customer = customerRepository.save(customer);
         }

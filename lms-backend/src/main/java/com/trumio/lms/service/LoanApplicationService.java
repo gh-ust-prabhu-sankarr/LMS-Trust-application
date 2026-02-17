@@ -49,7 +49,7 @@ public class LoanApplicationService {
 
         Customer customer = customerService.getCurrentCustomer();
         if (customer.getCreditScore() == null) {
-            customer.setCreditScore(650 + new java.util.Random().nextInt(251));
+            customer.setCreditScore(650 + new java.util.Random().nextInt(151));
             customerRepository.save(customer);
         }
 

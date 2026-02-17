@@ -72,6 +72,44 @@ const txStatusMeta = (tx) => {
   return { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" };
 };
 
+const pickFirstNonEmpty = (...values) => {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+};
+
+const fallbackFullNameFromUser = (user) => {
+  const direct = pickFirstNonEmpty(user?.fullName, user?.name, user?.username);
+  if (direct) return direct;
+  const email = pickFirstNonEmpty(user?.email);
+  if (!email.includes("@")) return "";
+  return email.split("@")[0].replace(/[._-]+/g, " ").trim();
+};
+
+const fallbackPhoneFromUser = (user) =>
+  pickFirstNonEmpty(user?.phone, user?.phoneNumber, user?.mobile, user?.mobileNumber, user?.contactNumber);
+
+const toProfileForm = (profile, user, prev = null) => ({
+  fullName: pickFirstNonEmpty(profile?.fullName, prev?.fullName, fallbackFullNameFromUser(user)),
+  phone: pickFirstNonEmpty(profile?.phone, prev?.phone, fallbackPhoneFromUser(user)),
+  panNumber: pickFirstNonEmpty(profile?.panNumber, prev?.panNumber),
+  address: pickFirstNonEmpty(profile?.address, prev?.address),
+  employmentType: pickFirstNonEmpty(profile?.employmentType, prev?.employmentType),
+  annualIncome:
+    profile?.monthlyIncome != null
+      ? annualFromMonthly(profile?.monthlyIncome)
+      : pickFirstNonEmpty(prev?.annualIncome),
+});
+
+const toKycForm = (kyc, profile, user, prev = null) => ({
+  fullName: pickFirstNonEmpty(kyc?.fullName, profile?.fullName, prev?.fullName, fallbackFullNameFromUser(user)),
+  dob: kyc?.dob ? String(kyc.dob).slice(0, 10) : pickFirstNonEmpty(prev?.dob),
+  panNumber: pickFirstNonEmpty(kyc?.panNumber, profile?.panNumber, prev?.panNumber),
+  aadhaarNumber: pickFirstNonEmpty(kyc?.aadhaarNumber, prev?.aadhaarNumber),
+});
+
 export default function UserDashboard() {
   const { user } = useAuth();
   
@@ -124,22 +162,34 @@ export default function UserDashboard() {
   const loadBase = async () => {
     setLoading(true);
     try {
-      const [pRes, lRes] = await Promise.all([customerApi.getMyProfile(), loanApi.getMyLoans()]);
-      const p = pRes.data;
-      setProfile(p);
-      setProfileForm({
-        fullName: p?.fullName || "",
-        phone: p?.phone || "",
-        panNumber: p?.panNumber || "",
-        address: p?.address || "",
-        employmentType: p?.employmentType || "",
-        annualIncome: annualFromMonthly(p?.monthlyIncome),
-      });
-      const loans = lRes.data || [];
-      setMyLoans(loans);
-      const kRes = await kycApi.getMyKyc().catch(() => null);
-      if (kRes?.data) setMyKyc(kRes.data);
-    } catch (e) { setError("Failed to synchronize workspace."); }
+      const [pRes, lRes, kRes] = await Promise.allSettled([
+        customerApi.getMyProfile(),
+        loanApi.getMyLoans(),
+        kycApi.getMyKyc(),
+      ]);
+
+      let loadedProfile = null;
+      if (pRes.status === "fulfilled") {
+        loadedProfile = pRes.value?.data || null;
+        setProfile(loadedProfile);
+      }
+
+      if (lRes.status === "fulfilled") {
+        setMyLoans(lRes.value?.data || []);
+      }
+
+      if (kRes.status === "fulfilled" && kRes.value?.data) {
+        setMyKyc(kRes.value.data);
+      }
+
+      setProfileForm((prev) => toProfileForm(loadedProfile, user, prev));
+      if (!loadedProfile && lRes.status !== "fulfilled" && kRes.status !== "fulfilled") {
+        setError("Failed to synchronize workspace.");
+      }
+    } catch (e) {
+      setError(getFriendlyError(e, "Failed to synchronize workspace."));
+      setProfileForm((prev) => toProfileForm(null, user, prev));
+    }
     finally { setLoading(false); }
   };
 
@@ -200,36 +250,15 @@ export default function UserDashboard() {
   }, [activeTab, myLoans]);
 
   useEffect(() => {
-    if (!myKyc) {
-      setKycForm({
-        fullName: profile?.fullName || "",
-        dob: "",
-        panNumber: profile?.panNumber || "",
-        aadhaarNumber: "",
-      });
-      return;
-    }
-    setKycForm({
-      fullName: myKyc?.fullName || "",
-      dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
-      panNumber: myKyc?.panNumber || "",
-      aadhaarNumber: myKyc?.aadhaarNumber || "",
-    });
-  }, [myKyc, profile]);
+    setKycForm((prev) => toKycForm(myKyc, profile, user, prev));
+  }, [myKyc, profile, user]);
 
   const handleProfileField = (key, value) => {
     setProfileForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const resetProfileEdit = () => {
-    setProfileForm({
-      fullName: profile?.fullName || "",
-      phone: profile?.phone || "",
-      panNumber: profile?.panNumber || "",
-      address: profile?.address || "",
-      employmentType: profile?.employmentType || "",
-      annualIncome: annualFromMonthly(profile?.monthlyIncome),
-    });
+    setProfileForm((prev) => toProfileForm(profile, user, prev));
     setProfileError("");
     setProfileSuccess("");
     setEditing(false);
@@ -381,14 +410,7 @@ export default function UserDashboard() {
     setKycSuccess("");
     setPanFile(null);
     setAadhaarFile(null);
-    if (myKyc) {
-      setKycForm({
-        fullName: myKyc?.fullName || "",
-        dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
-        panNumber: myKyc?.panNumber || "",
-        aadhaarNumber: myKyc?.aadhaarNumber || "",
-      });
-    }
+    setKycForm((prev) => toKycForm(myKyc, profile, user, prev));
   };
 
   const submitKyc = async () => {
@@ -514,9 +536,7 @@ export default function UserDashboard() {
                       <Field label="Contact">
                         <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
-                      <Field label="Pan Number">
-                        <input value={profileForm.panNumber} onChange={(e) => handleProfileField("panNumber", e.target.value.toUpperCase())} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
-                      </Field>
+  
                       <Field label="Employment">
                         <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
@@ -532,7 +552,7 @@ export default function UserDashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InfoBox label="Legal Name" value={profile?.fullName} />
                       <InfoBox label="Contact" value={profile?.phone} />
-                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} />
+                     
                       <InfoBox label="Employment" value={profile?.employmentType} />
                       <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
                       <InfoBox label="Address" value={profile?.address} />
