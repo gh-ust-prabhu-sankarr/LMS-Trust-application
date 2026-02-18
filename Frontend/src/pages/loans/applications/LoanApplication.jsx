@@ -255,7 +255,7 @@ export default function LoanApplication() {
 
       await loanApi.submit(loanId);
       showModal(
-        `${activeLoan?.name || "Loan"} application submitted to loan officer successfully.`,
+        "Application submitted successfully",
         "Success",
         () => navigate("/app")
       );

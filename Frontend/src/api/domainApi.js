@@ -89,7 +89,14 @@ export const loanApi = {
   getByStatus: (status) => api.get(`/loans/status/${status}`),
   moveToReview: (loanId) => api.post(`/loans/${loanId}/review`),
   approve: (loanId, payload) => api.post(`/loans/${loanId}/approve`, payload),
-  reject: (loanId, reason) => api.post(`/loans/${loanId}/reject`, null, { params: { reason } }),
+  reject: async (loanId, reason) => {
+    try {
+      return await api.post(`/loans/${loanId}/reject`, null, { params: { reason } });
+    } catch (err) {
+      if (!shouldFallbackEndpoint(err)) throw err;
+      return api.post(`/loans/${loanId}/reject`, { reason });
+    }
+  },
   disburse: (loanId) => api.post(`/loans/${loanId}/disburse`),
 };
 

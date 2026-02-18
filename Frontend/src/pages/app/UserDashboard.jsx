@@ -5,6 +5,7 @@ import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/d
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
 import { getFriendlyError } from "../../utils/errorMessage.js";
+import { usePopup } from "../../components/ui/PopupProvider.jsx";
 import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 import { 
   User, ShieldCheck, Landmark, ReceiptIndianRupee, ChevronRight, 
@@ -29,6 +30,10 @@ const monthlyFromAnnual = (annual) => {
   const value = Number(annual);
   return Number.isFinite(value) ? value / 12 : NaN;
 };
+const legalFullNameRx = /^(?=.*[A-Za-z])[A-Za-z. ]+$/;
+const addressAllowedRx = /^[A-Za-z0-9\s,/#-]+$/;
+const sanitizeLegalName = (value = "") => value.replace(/[^A-Za-z.\s]/g, "");
+const formatEmploymentLabel = (value = "") => value.replaceAll("_", " ");
 
 const KYC_META = {
   PENDING: { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200", icon: <AlertCircle size={14}/> },
@@ -86,6 +91,7 @@ const isPendingStatus = (tx) => {
 
 export default function UserDashboard() {
   const { user } = useAuth();
+  const { showPopup } = usePopup();
   
   // --- UI & DATA STATE ---
   const [activeTab, setActiveTab] = useState("profile"); 
@@ -95,13 +101,13 @@ export default function UserDashboard() {
   const [profileForm, setProfileForm] = useState({
     fullName: "",
     phone: "",
-    panNumber: "",
     address: "",
     employmentType: "",
     annualIncome: "",
   });
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [profileFieldErrors, setProfileFieldErrors] = useState({});
   const [profileSuccess, setProfileSuccess] = useState("");
   const [myLoans, setMyLoans] = useState([]);
   const [myTransactions, setMyTransactions] = useState([]);
@@ -116,6 +122,7 @@ export default function UserDashboard() {
   const [agreementName, setAgreementName] = useState("");
   const [agreementBusy, setAgreementBusy] = useState(false);
   const [agreementError, setAgreementError] = useState("");
+  const employmentOptions = ["SALARIED", "SELF_EMPLOYED", "BUSINESS_OWNER", "BUSINESS", "STUDENT", "UNEMPLOYED", "RETIRED"];
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -142,7 +149,6 @@ export default function UserDashboard() {
       setProfileForm({
         fullName: p?.fullName || "",
         phone: p?.phone || "",
-        panNumber: p?.panNumber || "",
         address: p?.address || "",
         employmentType: p?.employmentType || "",
         annualIncome: annualFromMonthly(p?.monthlyIncome),
@@ -241,7 +247,7 @@ export default function UserDashboard() {
       setKycForm({
         fullName: profile?.fullName || "",
         dob: "",
-        panNumber: profile?.panNumber || "",
+        panNumber: "",
         aadhaarNumber: "",
       });
       return;
@@ -256,37 +262,80 @@ export default function UserDashboard() {
 
   const handleProfileField = (key, value) => {
     setProfileForm((prev) => ({ ...prev, [key]: value }));
+    setProfileFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   const resetProfileEdit = () => {
     setProfileForm({
       fullName: profile?.fullName || "",
       phone: profile?.phone || "",
-      panNumber: profile?.panNumber || "",
       address: profile?.address || "",
       employmentType: profile?.employmentType || "",
       annualIncome: annualFromMonthly(profile?.monthlyIncome),
     });
     setProfileError("");
+    setProfileFieldErrors({});
     setProfileSuccess("");
     setEditing(false);
   };
 
+  const validateProfile = (payload) => {
+    const errors = {};
+    if (!payload.fullName) {
+      errors.fullName = "Legal name is required.";
+    } else if (!legalFullNameRx.test(payload.fullName)) {
+      errors.fullName = "Legal name must contain alphabets, spaces or dots only.";
+    }
+
+    if (!payload.phone) {
+      errors.phone = "Phone is required.";
+    } else if (!/^[6-9][0-9]{9}$/.test(payload.phone)) {
+      errors.phone = "Phone must be a valid 10-digit mobile number.";
+    }
+
+    if (!payload.employmentType) {
+      errors.employmentType = "Select your employment type.";
+    }
+
+    if (!Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
+      errors.annualIncome = "Annual income must be greater than 0.";
+    }
+
+    if (!payload.address) {
+      errors.address = "Address is required.";
+    } else if (payload.address.length < 5) {
+      errors.address = "Address is too short.";
+    } else if (!addressAllowedRx.test(payload.address)) {
+      errors.address = "Address can include letters, numbers, spaces, commas, hyphens, / and #.";
+    } else if (!/[A-Za-z]/.test(payload.address)) {
+      errors.address = "Address must include letters and cannot be only numbers/symbols.";
+    }
+
+    return errors;
+  };
+
   const saveProfile = async () => {
     setProfileError("");
+    setProfileFieldErrors({});
     setProfileSuccess("");
 
     const payload = {
       fullName: profileForm.fullName.trim(),
       phone: profileForm.phone.trim(),
-      panNumber: profileForm.panNumber.trim().toUpperCase(),
       address: profileForm.address.trim(),
       employmentType: profileForm.employmentType.trim(),
       monthlyIncome: monthlyFromAnnual(profileForm.annualIncome),
     };
 
-    if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType || !Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
-      setProfileError("Fill all profile fields with valid values.");
+    const errors = validateProfile(payload);
+    if (Object.keys(errors).length) {
+      setProfileFieldErrors(errors);
+      setProfileError("Please fix highlighted fields.");
       return;
     }
 
@@ -298,7 +347,6 @@ export default function UserDashboard() {
       setProfileForm({
         fullName: updated?.fullName || "",
         phone: updated?.phone || "",
-        panNumber: updated?.panNumber || "",
         address: updated?.address || "",
         employmentType: updated?.employmentType || "",
         annualIncome: annualFromMonthly(updated?.monthlyIncome),
@@ -306,6 +354,14 @@ export default function UserDashboard() {
       setProfileSuccess("Profile updated successfully.");
       setEditing(false);
     } catch (e) {
+      const fieldMap = e?.response?.data;
+      if (fieldMap && typeof fieldMap === "object" && !Array.isArray(fieldMap) && !fieldMap.message) {
+        const mapped = { ...fieldMap };
+        if (mapped.monthlyIncome && !mapped.annualIncome) {
+          mapped.annualIncome = mapped.monthlyIncome;
+        }
+        setProfileFieldErrors(mapped);
+      }
       setProfileError(e?.response?.data?.message || e?.message || "Failed to update profile");
     } finally {
       setProfileBusy(false);
@@ -326,6 +382,14 @@ export default function UserDashboard() {
   const txTotalPages = Math.ceil((myTransactions.length || 0) / txPageSize);
 
   const totalPages = Math.ceil((schedule?.installments?.length || 0) / pageSize);
+  const activeLoans = useMemo(
+    () => myLoans.filter((loan) => String(loan?.status || "").toUpperCase() === "APPROVED"),
+    [myLoans]
+  );
+  const canAcceptAgreement = (loan) =>
+    String(loan?.status || "").toUpperCase() === "APPROVED" &&
+    !loan?.agreementAccepted &&
+    !!loan?.approvedAt;
   const isScheduleFullyPaid = useMemo(() => {
     const items = schedule?.installments || [];
     if (!items.length) return false;
@@ -365,8 +429,16 @@ export default function UserDashboard() {
       .catch(() => {});
   }, [activeLoanId, isScheduleFullyPaid]);
 
+  useEffect(() => {
+    if (!activeLoanId) return;
+    const exists = activeLoans.some((loan) => loan.id === activeLoanId);
+    if (!exists) setActiveLoanId("");
+  }, [activeLoanId, activeLoans]);
+
   const handleFileDownload = (id, name) =>
-    fileApi.download(id, name).catch((e) => alert(getFriendlyError(e, "Download failed")));
+    fileApi
+      .download(id, name)
+      .catch((e) => showPopup(getFriendlyError(e, "Download failed"), { type: "error" }));
   const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
 
   const openAgreementModal = (loan) => {
@@ -545,23 +617,31 @@ export default function UserDashboard() {
 
                   {editing ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <Field label="Legal Name">
-                        <input value={profileForm.fullName} onChange={(e) => handleProfileField("fullName", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      <Field label="Legal Name" error={profileFieldErrors.fullName}>
+                        <input value={profileForm.fullName} onChange={(e) => handleProfileField("fullName", sanitizeLegalName(e.target.value))} className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.fullName ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`} />
                       </Field>
-                      <Field label="Contact">
-                        <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      <Field label="Contact" error={profileFieldErrors.phone}>
+                        <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))} className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.phone ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`} />
                       </Field>
-                      <Field label="Pan Number">
-                        <input value={profileForm.panNumber} onChange={(e) => handleProfileField("panNumber", e.target.value.toUpperCase())} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      <Field label="Employment" error={profileFieldErrors.employmentType}>
+                        <select
+                          value={profileForm.employmentType}
+                          onChange={(e) => handleProfileField("employmentType", e.target.value)}
+                          className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.employmentType ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                        >
+                          <option value="">Select Employment</option>
+                          {employmentOptions.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {formatEmploymentLabel(opt)}
+                            </option>
+                          ))}
+                        </select>
                       </Field>
-                      <Field label="Employment">
-                        <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      <Field label="Annual Income" error={profileFieldErrors.annualIncome}>
+                        <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.annualIncome ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`} />
                       </Field>
-                      <Field label="Annual Income">
-                        <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
-                      </Field>
-                      <Field label="Address">
-                        <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      <Field label="Address" error={profileFieldErrors.address}>
+                        <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.address ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`} />
                       </Field>
                       <InfoBox label="CIBIL Score" value={profile?.creditScore} />
                     </div>
@@ -569,8 +649,7 @@ export default function UserDashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InfoBox label="Legal Name" value={profile?.fullName} />
                       <InfoBox label="Contact" value={profile?.phone} />
-                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} />
-                      <InfoBox label="Employment" value={profile?.employmentType} />
+                      <InfoBox label="Employment" value={formatEmploymentLabel(profile?.employmentType || "")} />
                       <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
                       <InfoBox label="Address" value={profile?.address} />
                       <InfoBox label="CIBIL Score" value={profile?.creditScore} />
@@ -714,39 +793,57 @@ export default function UserDashboard() {
             {/* 3. LOANS */}
             {activeTab === "loans" && (
               <motion.div key="loans" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-                <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        <th className="p-6">Loan Facility</th>
-                        <th className="p-6">Principal</th>
-                        <th className="p-6">Status</th>
-                        <th className="p-6 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {myLoans.map(l => (
-                        <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
-                          <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
-                          <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
-                          <td className="p-6 text-right">
-                            {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
-                              <button
-                                onClick={() => openAgreementModal(l)}
-                                className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
-                              >
-                                Accept Agreement
-                              </button>
-                            ) : (
-                              <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
-                            )}
-                          </td>
+                {myLoans.length ? (
+                  <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          <th className="p-6">Loan Facility</th>
+                          <th className="p-6">Principal</th>
+                          <th className="p-6">Status</th>
+                          <th className="p-6 text-right">Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {myLoans.map(l => (
+                          <tr key={l.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
+                            <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
+                            <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
+                            <td className="p-6 text-right">
+                              {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
+                                canAcceptAgreement(l) ? (
+                                  <button
+                                    onClick={() => openAgreementModal(l)}
+                                    className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
+                                  >
+                                    Accept Agreement
+                                  </button>
+                                ) : (
+                                  <button
+                                    disabled
+                                    title="Agreement is not generated yet."
+                                    className="cursor-not-allowed text-slate-400 font-black text-[10px] uppercase tracking-widest border border-slate-200 px-3 py-1 rounded-lg"
+                                  >
+                                    Accept Agreement
+                                  </button>
+                                )
+                              ) : (
+                                <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="rounded-[2rem] border border-slate-200 bg-white p-14 text-center shadow-xl shadow-slate-200/30">
+                    <Landmark size={42} className="mx-auto mb-4 text-slate-300" />
+                    <h4 className="text-lg font-bold text-slate-700">No data available</h4>
+                    <p className="mt-1 text-sm text-slate-500">You have not applied for any loans yet.</p>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -841,10 +938,24 @@ export default function UserDashboard() {
               <motion.div key="repayments" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
                   <h3 className="text-xl font-bold text-slate-900 mb-6">Payment Schedule</h3>
-                  <select value={activeLoanId} onChange={(e) => setActiveLoanId(e.target.value)} className="w-full mb-8 rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm focus:border-emerald-500 outline-none transition-colors">
-                    <option value="">Select an active facility...</option>
-                    {myLoans.map(l => <option key={l.id} value={l.id}>{l.loanProductName} ({money(l.requestedAmount)})</option>)}
-                  </select>
+                  <div className="mb-8 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50 p-3">
+                    <select
+                      value={activeLoanId}
+                      onChange={(e) => setActiveLoanId(e.target.value)}
+                      disabled={!activeLoans.length}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 focus:border-emerald-500 outline-none transition-colors disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <option value="">Select active loan...</option>
+                      {activeLoans.map((l) => (
+                        <option key={l.id} value={l.id}>{l.loanProductName}</option>
+                      ))}
+                    </select>
+                    {!activeLoans.length && (
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        No active loans available for payment.
+                      </p>
+                    )}
+                  </div>
 
                   {activeLoanId && (
                     <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1016,11 +1127,12 @@ function InfoBox({ label, value, wide }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, error }) {
   return (
     <div className="flex flex-col gap-2">
       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">{label}</label>
       {children}
+      {error ? <p className="text-xs font-semibold text-rose-600">{error}</p> : null}
     </div>
   );
 }

@@ -136,8 +136,13 @@ public class LoanApplicationService {
 
         LoanApplication saved = loanApplicationRepository.save(application);
 
-        auditService.log(customer.getUserId(), "LOAN_CREATED", "LOAN_APPLICATION",
-                request, saved, saved.getId(), "Loan application created");
+        auditService.log(
+                customer.getUserId(),
+                "LOAN_CREATED",
+                "LOAN_APPLICATION",
+                saved.getId(),
+                "Loan application created"
+        );
 
         return ApiResponse.success("Application created successfully", saved);
     }
@@ -160,8 +165,13 @@ public class LoanApplicationService {
 
         LoanApplication saved = loanApplicationRepository.save(loan);
 
-        auditService.log(customer.getUserId(), "LOAN_SUBMITTED", "LOAN_APPLICATION",
-                loan, saved, saved.getId(), "Loan application submitted");
+        auditService.log(
+                customer.getUserId(),
+                "LOAN_SUBMITTED",
+                "LOAN_APPLICATION",
+                saved.getId(),
+                "Loan application submitted"
+        );
 
         return ApiResponse.success("Application submitted successfully", saved);
     }
@@ -199,6 +209,10 @@ public class LoanApplicationService {
         if (loan.getStatus() != LoanStatus.APPROVED) {
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
                     "Agreement can only be accepted after loan is approved");
+        }
+        if (loan.getApprovedAt() == null) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Agreement is not generated yet");
         }
 
         String signer = acceptedName == null ? "" : acceptedName.trim();

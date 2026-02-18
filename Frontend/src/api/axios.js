@@ -52,8 +52,15 @@ api.interceptors.response.use(
 
     if (status === 401) {
       removeToken();
-      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-        window.location.replace("/login");
+      if (typeof window !== "undefined") {
+        const current = window.location.pathname || "";
+        const isAuthScreen =
+          current === "/login" ||
+          current === "/register" ||
+          current.startsWith("/login/");
+        if (!isAuthScreen) {
+          window.location.replace("/login");
+        }
       }
     }
     return Promise.reject(error);

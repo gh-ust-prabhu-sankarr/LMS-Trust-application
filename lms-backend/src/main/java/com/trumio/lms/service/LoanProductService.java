@@ -21,6 +21,14 @@ public class LoanProductService {
     private final LoanProductRepository loanProductRepository;
 
     public ApiResponse<LoanProduct> createProduct(LoanProductRequest request) {
+        if (request.getMinTenure() != null && request.getMaxTenure() != null
+                && request.getMinTenure() > request.getMaxTenure()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Min tenure cannot be greater than max tenure");
+        }
+        if (request.getMinCreditScore() != null && request.getMinCreditScore() < 650) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Min credit score must be at least 650");
+        }
+
         LoanProduct product = LoanProduct.builder()
                 .name(request.getName())
                 .description(request.getDescription())

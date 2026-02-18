@@ -11,14 +11,9 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class SignupRequest {
-
+public class CreateOfficerRequest {
     @NotBlank(message = "Username is required")
-    @Size(min = 3, max = 60, message = "Name must be between 3 and 60 characters")
-    @Pattern(
-            regexp = "^[A-Za-z]+(?:[ '-][A-Za-z]+)*$",
-            message = "Name must contain only letters and spaces"
-    )
+    @Size(min = 3, max = 60, message = "Username must be between 3 and 60 characters")
     private String username;
 
     @NotBlank(message = "Email is required")
@@ -32,8 +27,4 @@ public class SignupRequest {
             message = "Password must include uppercase, lowercase, number and special character"
     )
     private String password;
-
-    @NotBlank(message = "Phone is required")
-    @Pattern(regexp = "^[6-9][0-9]{9}$", message = "Phone must be a valid 10-digit Indian mobile number")
-    private String phone;
 }

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
 import { parseApplicationFields, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
+import { getFriendlyError } from "../../utils/errorMessage.js";
+import { usePopup } from "../../components/ui/PopupProvider.jsx";
 import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid, ScrollText } from "lucide-react";
 
 const initialProductForm = {
@@ -25,8 +27,12 @@ const initialProductForm = {
 };
 
 const initialOfficerForm = { username: "", email: "", password: "" };
+const initialOfficerErrors = {};
+const initialProductErrors = {};
+const hasAlphabet = (value = "") => /[A-Za-z]/.test(String(value));
 
 export default function AdminDashboard() {
+  const { showPopup } = usePopup();
   const [activeTab, setActiveTab] = useState("DIRECTORY");
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
@@ -34,16 +40,17 @@ export default function AdminDashboard() {
   const [userPage, setUserPage] = useState(1);
   const [productForm, setProductForm] = useState(initialProductForm);
   const [officerForm, setOfficerForm] = useState(initialOfficerForm);
+  const [officerErrors, setOfficerErrors] = useState(initialOfficerErrors);
+  const [productErrors, setProductErrors] = useState(initialProductErrors);
   const [processing, setProcessing] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
   const [txError, setTxError] = useState("");
   const [transactions, setTransactions] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [txCustomerPage, setTxCustomerPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
   const [txSearch, setTxSearch] = useState("");
   const [auditLogs, setAuditLogs] = useState([]);
-  const [auditFilters, setAuditFilters] = useState({ userId: "", entityType: "", limit: 50 });
+  const [auditFilters, setAuditFilters] = useState({ userId: "", action: "", limit: 50 });
+  const [auditActionOptions, setAuditActionOptions] = useState([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
   const [auditPage, setAuditPage] = useState(1);
@@ -81,27 +88,55 @@ export default function AdminDashboard() {
     return Number.isFinite(n) ? n : null;
   };
 
-  const loadTransactionsForCustomer = async (customer) => {
-    if (!customer?.id) return;
+  const loadAllTransactions = async () => {
     setTxLoading(true);
     setTxError("");
     try {
-      const res = await adminApi.getAuditByUser(customer.id);
-      const audits = unwrap(res) || res?.data || [];
-      const rows = audits
-        .filter((a) => {
-          const details = String(a?.details || "").toLowerCase();
-          const isRepayment = details.includes("repayment of");
-          const isCheckoutEvent = details.includes("checkout session");
-          return isRepayment && !isCheckoutEvent;
-        })
-        .map((a) => ({
-          id: `${customer?.id || "u"}-${a?.id || a?.timestamp || Math.random()}`,
-          amount: parseAuditAmount(a?.details),
-          details: a?.details || "-",
-          transactionRef: "-",
-          timestamp: a?.timestamp || null,
-        }));
+      const userRes = await adminApi.getUsers();
+      const allUsers = unwrap(userRes) || [];
+      const customers = allUsers.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER");
+      const auditResults = await Promise.allSettled(
+        customers.map((customer) => adminApi.getAuditByUser(customer.id))
+      );
+      const rows = auditResults.flatMap((result, idx) => {
+        if (result.status !== "fulfilled") return [];
+        const customer = customers[idx];
+        const audits = unwrap(result.value) || result.value?.data || [];
+        const onlineRefs = new Set(
+          audits
+            .filter((a) => String(a?.action || "").toUpperCase() === "STRIPE_PAYMENT_CONFIRMED")
+            .map((a) => String(a?.entityId || ""))
+            .filter(Boolean)
+        );
+        const failedRefs = new Set(
+          audits
+            .filter((a) => {
+              const action = String(a?.action || "").toUpperCase();
+              const details = String(a?.details || "").toLowerCase();
+              return action.includes("FAILED") || details.includes("failed") || details.includes("cancel");
+            })
+            .map((a) => String(a?.entityId || ""))
+            .filter(Boolean)
+        );
+        return audits
+          .filter((a) => {
+            const details = String(a?.details || "").toLowerCase();
+            const isRepayment = details.includes("repayment of");
+            const isCheckoutEvent = details.includes("checkout session");
+            return isRepayment && !isCheckoutEvent;
+          })
+          .map((a) => ({
+            id: a?.id || `${customer?.id || "u"}-${a?.timestamp || Math.random()}`,
+            amount: parseAuditAmount(a?.details),
+            details: a?.details || "-",
+            transactionRef: a?.entityId || "-",
+            timestamp: a?.timestamp || null,
+            customerName: customer?.username || "-",
+            customerEmail: customer?.email || "-",
+            method: onlineRefs.has(String(a?.entityId || "")) ? "ONLINE" : "OFFLINE",
+            status: failedRefs.has(String(a?.entityId || "")) ? "FAILED" : "SUCCESS",
+          }));
+      });
 
       rows.sort((a, b) => {
         const ta = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
@@ -109,7 +144,6 @@ export default function AdminDashboard() {
         return tb - ta;
       });
 
-      setSelectedCustomer(customer);
       setTransactions(rows);
       setTxPage(1);
     } catch (err) {
@@ -124,7 +158,6 @@ export default function AdminDashboard() {
     const params = { ...auditFilters, ...overrides };
     const cleanParams = {
       userId: params.userId || undefined,
-      entityType: params.entityType || undefined,
       limit: Number(params.limit) || 50,
     };
 
@@ -134,7 +167,11 @@ export default function AdminDashboard() {
     try {
       const res = await adminApi.getAuditLogs(cleanParams);
       const logs = unwrap(res) || res?.data || [];
-      setAuditLogs(logs);
+      const actionFilter = String(params.action || "").trim().toUpperCase();
+      const filtered = actionFilter
+        ? logs.filter((log) => String(log?.action || "").toUpperCase() === actionFilter)
+        : logs;
+      setAuditLogs(filtered);
       setAuditPage(1);
     } catch (err) {
       setAuditError(err?.response?.data?.message || err?.message || "Failed to fetch audit logs.");
@@ -146,16 +183,15 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (activeTab !== "TRANSACTIONS") return;
+    loadAllTransactions();
     setTxError("");
-    setTransactions([]);
-    setSelectedCustomer(null);
     setTxPage(1);
-    setTxCustomerPage(1);
     setTxSearch("");
   }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== "AUDIT") return;
+    loadAuditActionOptions();
     loadAuditLogs();
   }, [activeTab]);
 
@@ -171,26 +207,22 @@ export default function AdminDashboard() {
 
   const totalUserPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const paginatedUsers = filteredUsers.slice((userPage - 1) * itemsPerPage, userPage * itemsPerPage);
-  const customerUsers = useMemo(
-    () => users.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER"),
-    [users]
-  );
-  const filteredTxCustomers = useMemo(() => {
+  const filteredTransactions = useMemo(() => {
     const q = txSearch.trim().toLowerCase();
-    if (!q) return customerUsers;
-    return customerUsers.filter((u) =>
-      String(u?.username || "").toLowerCase().includes(q) ||
-      String(u?.email || "").toLowerCase().includes(q)
+    if (!q) return transactions;
+    return transactions.filter((tx) =>
+      String(tx?.id || "").toLowerCase().includes(q) ||
+      String(tx?.transactionRef || "").toLowerCase().includes(q) ||
+      String(tx?.customerName || "").toLowerCase().includes(q) ||
+      String(tx?.customerEmail || "").toLowerCase().includes(q)
     );
-  }, [customerUsers, txSearch]);
-  const totalCustomerPages = Math.ceil(filteredTxCustomers.length / txItemsPerPage);
-  const paginatedCustomers = filteredTxCustomers.slice((txCustomerPage - 1) * txItemsPerPage, txCustomerPage * txItemsPerPage);
-  const totalTxPages = Math.ceil((transactions.length || 0) / txItemsPerPage);
+  }, [transactions, txSearch]);
+  const totalTxPages = Math.max(1, Math.ceil((filteredTransactions.length || 0) / txItemsPerPage));
   const paginatedTransactions = useMemo(() => {
     const start = (txPage - 1) * txItemsPerPage;
-    return transactions.slice(start, start + txItemsPerPage);
-  }, [transactions, txPage]);
-  const totalAuditPages = Math.ceil((auditLogs.length || 0) / auditItemsPerPage);
+    return filteredTransactions.slice(start, start + txItemsPerPage);
+  }, [filteredTransactions, txPage]);
+  const totalAuditPages = Math.max(1, Math.ceil((auditLogs.length || 0) / auditItemsPerPage));
   const paginatedAuditLogs = useMemo(() => {
     const start = (auditPage - 1) * auditItemsPerPage;
     return auditLogs.slice(start, start + auditItemsPerPage);
@@ -210,33 +242,64 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    setTxCustomerPage(1);
+    setTxPage(1);
   }, [txSearch]);
 
   const handleToggleUser = async (user) => {
     if (String(user?.role || "").toUpperCase() === "ADMIN") {
-      alert("Admin accounts cannot be suspended.");
+      showPopup("Admin accounts cannot be suspended.", { type: "error", title: "Not Allowed" });
       return;
     }
     try {
       await adminApi.toggleUserStatus(user.id, !user.active);
-      loadData();
+      await loadData();
+      showPopup("User status updated successfully.", { type: "success" });
+    } catch (err) {
+      showPopup(getFriendlyError(err, "Action failed."), { type: "error" });
+    }
+  };
+
+  const loadAuditActionOptions = async () => {
+    try {
+      const res = await adminApi.getAuditLogs({ limit: 200 });
+      const logs = unwrap(res) || res?.data || [];
+      const options = [
+        ...new Set(
+          logs
+            .map((log) => String(log?.action || "").trim().toUpperCase())
+            .filter(Boolean)
+        ),
+      ].sort();
+      setAuditActionOptions(options);
     } catch {
-      alert("Action failed");
+      setAuditActionOptions([]);
     }
   };
 
   const handleCreateOfficer = async (e) => {
     e.preventDefault();
+    const nextErrors = {};
+    if (!officerForm.username.trim()) nextErrors.username = "Username is required.";
+    if (!officerForm.email.trim()) nextErrors.email = "Email is required.";
+    if (!officerForm.password) nextErrors.password = "Password is required.";
+    if (officerForm.password && officerForm.password.length < 8) nextErrors.password = "Password must be at least 8 characters.";
+    setOfficerErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+
     setProcessing(true);
     try {
       await adminApi.createOfficer(officerForm);
       setOfficerForm(initialOfficerForm);
+      setOfficerErrors(initialOfficerErrors);
       setActiveTab("DIRECTORY");
-      loadData();
-      alert("Staff account created.");
-    } catch {
-      alert("Failed to create officer.");
+      await loadData();
+      showPopup("Staff account created.", { type: "success" });
+    } catch (err) {
+      const fieldMap = err?.response?.data;
+      if (fieldMap && typeof fieldMap === "object" && !Array.isArray(fieldMap) && !fieldMap.message) {
+        setOfficerErrors(fieldMap);
+      }
+      showPopup(getFriendlyError(err, "Failed to create officer."), { type: "error" });
     } finally {
       setProcessing(false);
     }
@@ -244,6 +307,22 @@ export default function AdminDashboard() {
 
   const handleCreateProduct = async (e) => {
     e.preventDefault();
+    const nextErrors = {};
+    if (!hasAlphabet(productForm.name)) nextErrors.name = "Product name must contain alphabets.";
+    if (!hasAlphabet(productForm.heroTitle)) nextErrors.heroTitle = "Hero title must contain alphabets.";
+    const minTenure = parseInt(productForm.minTenure, 10);
+    const maxTenure = parseInt(productForm.maxTenure, 10);
+    const minCredit = parseInt(productForm.minCreditScore, 10);
+    if (Number.isFinite(minTenure) && Number.isFinite(maxTenure) && minTenure > maxTenure) {
+      nextErrors.minTenure = "Min tenure cannot be greater than max tenure.";
+      nextErrors.maxTenure = "Max tenure must be greater than or equal to min tenure.";
+    }
+    if (Number.isFinite(minCredit) && minCredit < 650) {
+      nextErrors.minCreditScore = "Min credit score must be 650 or above.";
+    }
+    setProductErrors(nextErrors);
+    if (Object.keys(nextErrors).length) return;
+
     setProcessing(true);
     try {
       const payload = {
@@ -282,7 +361,14 @@ export default function AdminDashboard() {
       }
 
       setProductForm(initialProductForm);
-      alert("Product published successfully.");
+      setProductErrors(initialProductErrors);
+      showPopup("Product published successfully.", { type: "success" });
+    } catch (err) {
+      const fieldMap = err?.response?.data;
+      if (fieldMap && typeof fieldMap === "object" && !Array.isArray(fieldMap) && !fieldMap.message) {
+        setProductErrors(fieldMap);
+      }
+      showPopup(getFriendlyError(err, "Failed to publish product."), { type: "error" });
     } finally {
       setProcessing(false);
     }
@@ -308,7 +394,7 @@ export default function AdminDashboard() {
         <TabButton active={activeTab === "PRODUCT"} onClick={() => setActiveTab("PRODUCT")} icon={<PackagePlus size={16} />} label="Issue Product" />
       </div>
 
-      <div className="max-w-4xl mx-auto">
+      <div className={`${activeTab === "TRANSACTIONS" ? "max-w-6xl" : "max-w-4xl"} mx-auto`}>
         {activeTab === "DIRECTORY" && (
           <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
             <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -322,7 +408,7 @@ export default function AdminDashboard() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="text"
-                  placeholder="Search accounts..."
+                  placeholder="Search account by email"
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -439,13 +525,19 @@ export default function AdminDashboard() {
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Entity Type</label>
-                <input
-                  value={auditFilters.entityType}
-                  onChange={(e) => setAuditFilters((p) => ({ ...p, entityType: e.target.value.toUpperCase() }))}
-                  placeholder="LOAN_APPLICATION, FILE, etc."
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Action Type</label>
+                <select
+                  value={auditFilters.action}
+                  onChange={(e) => setAuditFilters((p) => ({ ...p, action: e.target.value }))}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
+                >
+                  <option value="">Any action</option>
+                  {auditActionOptions.map((action) => (
+                    <option key={action} value={action}>
+                      {action}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Limit</label>
@@ -468,7 +560,7 @@ export default function AdminDashboard() {
                     Apply Filters
                   </button>
                   <button
-                    onClick={() => loadAuditLogs({ userId: "", entityType: "", limit: 50 })}
+                    onClick={() => loadAuditLogs({ userId: "", action: "", limit: 50 })}
                     disabled={auditLoading}
                     className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all disabled:opacity-60"
                   >
@@ -561,9 +653,9 @@ export default function AdminDashboard() {
                 </div>
               </div>
               <form onSubmit={handleCreateOfficer} className="space-y-5">
-                <Field label="Staff Username" placeholder="officer_01" value={officerForm.username} onChange={(v) => setOfficerForm((p) => ({ ...p, username: v }))} />
-                <Field label="Official Email" placeholder="staff@trumio.com" type="email" value={officerForm.email} onChange={(v) => setOfficerForm((p) => ({ ...p, email: v }))} />
-                <Field label="Temporary Password" type="password" value={officerForm.password} onChange={(v) => setOfficerForm((p) => ({ ...p, password: v }))} />
+                <Field label="Staff Username" placeholder="officer_01" value={officerForm.username} error={officerErrors.username} onChange={(v) => { setOfficerErrors((p) => ({ ...p, username: "" })); setOfficerForm((p) => ({ ...p, username: v })); }} />
+                <Field label="Official Email" placeholder="staff@trumio.com" type="email" value={officerForm.email} error={officerErrors.email} onChange={(v) => { setOfficerErrors((p) => ({ ...p, email: "" })); setOfficerForm((p) => ({ ...p, email: v })); }} />
+                <Field label="Password" type="password" value={officerForm.password} error={officerErrors.password} onChange={(v) => { setOfficerErrors((p) => ({ ...p, password: "" })); setOfficerForm((p) => ({ ...p, password: v })); }} />
                 <button disabled={processing} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 transition-all">
                   Create Officer Account
                 </button>
@@ -585,8 +677,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
               <button
-                onClick={() => selectedCustomer && loadTransactionsForCustomer(selectedCustomer)}
-                disabled={txLoading || !selectedCustomer}
+                onClick={loadAllTransactions}
+                disabled={txLoading}
                 className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
               >
                 {txLoading ? "Refreshing..." : "Refresh"}
@@ -597,11 +689,7 @@ export default function AdminDashboard() {
               <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
-              <div className="lg:col-span-4 border-r border-slate-100">
-                <div className="px-6 py-4 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Customers
-                </div>
+            <div>
                 <div className="px-6 py-3 border-b border-slate-100">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -609,66 +697,27 @@ export default function AdminDashboard() {
                       type="text"
                       value={txSearch}
                       onChange={(e) => setTxSearch(e.target.value)}
-                      placeholder="Search customer..."
+                      placeholder="Search by ref id, name or email..."
                       className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
                     />
                   </div>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {paginatedCustomers.map((u) => (
-                    <button
-                      key={u.id}
-                      onClick={() => loadTransactionsForCustomer(u)}
-                      className={`w-full text-left px-6 py-4 transition-colors ${
-                        selectedCustomer?.id === u.id ? "bg-emerald-50" : "hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="text-sm font-bold text-slate-800">{u.username}</div>
-                      <div className="text-[10px] text-slate-400">{u.email}</div>
-                    </button>
-                  ))}
-                  {!paginatedCustomers.length && (
-                    <div className="px-6 py-8 text-sm text-slate-500">No matching customers.</div>
-                  )}
-                </div>
-                {totalCustomerPages > 1 && (
-                  <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      Page {txCustomerPage} of {totalCustomerPages}
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        disabled={txCustomerPage === 1}
-                        onClick={() => setTxCustomerPage((p) => p - 1)}
-                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
-                      >
-                        <ChevronLeft size={16} />
-                      </button>
-                      <button
-                        disabled={txCustomerPage >= totalCustomerPages}
-                        onClick={() => setTxCustomerPage((p) => p + 1)}
-                        className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
-                      >
-                        <ChevronRight size={16} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="lg:col-span-8">
-                {!selectedCustomer ? (
-                  <div className="p-10 text-center text-sm text-slate-500">Select a customer to view transactions.</div>
-                ) : txLoading ? (
+              <div>
+                {txLoading ? (
                   <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
-                ) : transactions.length ? (
+                ) : filteredTransactions.length ? (
                   <>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
                         <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
                           <tr>
+                            <th className="px-6 py-4">Customer</th>
+                            <th className="px-6 py-4">Email</th>
                             <th className="px-6 py-4">Date & Time</th>
                             <th className="px-6 py-4">Amount</th>
+                            <th className="px-6 py-4">Reference ID</th>
+                            <th className="px-6 py-4">Status</th>
+                            <th className="px-6 py-4">Method</th>
                             <th className="px-6 py-4">Transaction Ref</th>
                             <th className="px-6 py-4">Details</th>
                           </tr>
@@ -676,8 +725,13 @@ export default function AdminDashboard() {
                         <tbody className="divide-y divide-slate-100">
                           {paginatedTransactions.map((tx) => (
                             <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 text-sm text-slate-700">{tx.customerName || "-"}</td>
+                              <td className="px-6 py-4 text-xs text-slate-600">{tx.customerEmail || "-"}</td>
                               <td className="px-6 py-4 text-sm text-slate-700">{formatDateTime(tx.timestamp)}</td>
                               <td className="px-6 py-4 text-sm font-semibold text-slate-800">{money(tx.amount)}</td>
+                              <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx.id}</td>
+                              <td className={`px-6 py-4 text-xs font-black ${tx.status === "FAILED" ? "text-rose-600" : "text-emerald-700"}`}>{tx.status}</td>
+                              <td className="px-6 py-4 text-xs font-semibold text-slate-700">{tx.method}</td>
                               <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx.transactionRef}</td>
                               <td className="px-6 py-4 text-xs text-slate-600">{tx.details}</td>
                             </tr>
@@ -711,7 +765,7 @@ export default function AdminDashboard() {
                     )}
                   </>
                 ) : (
-                  <div className="p-10 text-center text-sm text-slate-500">No repayment records found for this customer.</div>
+                  <div className="p-10 text-center text-sm text-slate-500">No repayment records found.</div>
                 )}
               </div>
             </div>
@@ -732,8 +786,8 @@ export default function AdminDashboard() {
               </div>
 
               <form onSubmit={handleCreateProduct} className="space-y-6">
-                <Field label="Product Name" placeholder="e.g. Small Business Growth Fund" value={productForm.name} onChange={(v) => setProductForm((p) => ({ ...p, name: v }))} />
-                <Field label="Hero Title" placeholder="Scale your next growth phase." value={productForm.heroTitle} onChange={(v) => setProductForm((p) => ({ ...p, heroTitle: v }))} />
+                <Field label="Product Name" placeholder="e.g. Small Business Growth Fund" value={productForm.name} error={productErrors.name} onChange={(v) => { setProductErrors((p) => ({ ...p, name: "" })); setProductForm((p) => ({ ...p, name: v })); }} />
+                <Field label="Hero Title" placeholder="Scale your next growth phase." value={productForm.heroTitle} error={productErrors.heroTitle} onChange={(v) => { setProductErrors((p) => ({ ...p, heroTitle: "" })); setProductForm((p) => ({ ...p, heroTitle: v })); }} />
                 <Field label="Hero Subtitle" placeholder="Page subtitle shown on EMI screen" value={productForm.heroSubtitle} onChange={(v) => setProductForm((p) => ({ ...p, heroSubtitle: v }))} />
                 <Field label="Badge Text" placeholder="e.g. Enterprise Finance" value={productForm.badgeText} onChange={(v) => setProductForm((p) => ({ ...p, badgeText: v }))} />
                 <Field label="CTA Text" placeholder="e.g. Apply for Growth Loan" value={productForm.ctaText} onChange={(v) => setProductForm((p) => ({ ...p, ctaText: v }))} />
@@ -742,10 +796,10 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <Field label="Min Amount (INR)" type="number" value={productForm.minAmount} onChange={(v) => setProductForm((p) => ({ ...p, minAmount: v }))} />
                   <Field label="Max Amount (INR)" type="number" value={productForm.maxAmount} onChange={(v) => setProductForm((p) => ({ ...p, maxAmount: v }))} />
-                  <Field label="Min Tenure (Months)" type="number" value={productForm.minTenure} onChange={(v) => setProductForm((p) => ({ ...p, minTenure: v }))} />
-                  <Field label="Max Tenure (Months)" type="number" value={productForm.maxTenure} onChange={(v) => setProductForm((p) => ({ ...p, maxTenure: v }))} />
+                  <Field label="Min Tenure (Months)" type="number" value={productForm.minTenure} error={productErrors.minTenure} onChange={(v) => { setProductErrors((p) => ({ ...p, minTenure: "" })); setProductForm((p) => ({ ...p, minTenure: v })); }} />
+                  <Field label="Max Tenure (Months)" type="number" value={productForm.maxTenure} error={productErrors.maxTenure} onChange={(v) => { setProductErrors((p) => ({ ...p, maxTenure: "" })); setProductForm((p) => ({ ...p, maxTenure: v })); }} />
                   <Field label="Interest Rate (%)" type="number" value={productForm.interestRate} onChange={(v) => setProductForm((p) => ({ ...p, interestRate: v }))} />
-                  <Field label="Min Credit Score" type="number" value={productForm.minCreditScore} onChange={(v) => setProductForm((p) => ({ ...p, minCreditScore: v }))} />
+                  <Field label="Min Credit Score" type="number" value={productForm.minCreditScore} error={productErrors.minCreditScore} onChange={(v) => { setProductErrors((p) => ({ ...p, minCreditScore: "" })); setProductForm((p) => ({ ...p, minCreditScore: v })); }} />
                 </div>
 
                 <div>
@@ -810,7 +864,7 @@ function TabButton({ active, onClick, icon, label }) {
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = "text", multiline = false, rows = 3 }) {
+function Field({ label, value, onChange, placeholder, type = "text", multiline = false, rows = 3, error }) {
   return (
     <div>
       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">{label}</label>
@@ -820,7 +874,7 @@ function Field({ label, value, onChange, placeholder, type = "text", multiline =
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={rows}
-          className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+          className={`w-full rounded-xl border bg-slate-50/50 px-4 py-2.5 text-sm outline-none transition-all ${error ? "border-rose-400 focus:ring-2 focus:ring-rose-200" : "border-slate-200 focus:ring-2 focus:ring-emerald-500/20"}`}
         />
       ) : (
         <input
@@ -828,9 +882,10 @@ function Field({ label, value, onChange, placeholder, type = "text", multiline =
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+          className={`w-full rounded-xl border bg-slate-50/50 px-4 py-2.5 text-sm outline-none transition-all ${error ? "border-rose-400 focus:ring-2 focus:ring-rose-200" : "border-slate-200 focus:ring-2 focus:ring-emerald-500/20"}`}
         />
       )}
+      {error ? <p className="mt-1 text-xs font-semibold text-rose-600">{error}</p> : null}
     </div>
   );
 }

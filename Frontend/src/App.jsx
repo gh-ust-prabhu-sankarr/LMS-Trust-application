@@ -79,7 +79,7 @@ export default function App() {
           <Route
             path="/officer"
             element={
-              <ProtectedRoute allow={["CREDIT_OFFICER"]}>
+              <ProtectedRoute allow={["CREDIT_OFFICER", "LOAN_OFFICER"]}>
                 <OfficerDashboard />
               </ProtectedRoute>
             }

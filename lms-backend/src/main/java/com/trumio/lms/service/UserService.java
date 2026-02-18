@@ -25,17 +25,20 @@ public class UserService {
      * Create Credit Officer by Admin
      */
     public ApiResponse<User> createCreditOfficer(String username, String email, String password) {
-        if (userRepository.existsByUsername(username)) {
+        String normalizedUsername = username == null ? "" : username.trim().replaceAll("\\s+", " ");
+        String normalizedEmail = email == null ? "" : email.trim().toLowerCase();
+
+        if (userRepository.existsByUsername(normalizedUsername)) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS, "Username already exists");
         }
 
-        if (userRepository.existsByEmail(email)) {
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS, "Email already exists");
         }
 
         User officer = User.builder()
-                .username(username)
-                .email(email)
+                .username(normalizedUsername)
+                .email(normalizedEmail)
                 .password(passwordEncoder.encode(password))
                 .role(Role.CREDIT_OFFICER)
                 .active(true)

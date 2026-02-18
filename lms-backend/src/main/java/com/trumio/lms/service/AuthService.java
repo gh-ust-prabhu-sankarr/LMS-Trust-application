@@ -34,13 +34,14 @@ public class AuthService {
     private final AuditService auditService;
 
     public JwtResponse login(LoginRequest request) {
+        String normalizedEmail = normalizeEmail(request.getEmail());
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(normalizedEmail, request.getPassword())
         );
 
         String token = tokenProvider.generateToken(authentication);
 
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         auditService.log(user.getId(), "LOGIN", "USER", user.getId(), "User logged in");
@@ -58,17 +59,20 @@ public class AuthService {
     }
 
     public ApiResponse<String> signup(SignupRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
+        String normalizedUsername = normalizeDisplayName(request.getUsername());
+        String normalizedEmail = normalizeEmail(request.getEmail());
+
+        if (userRepository.existsByUsername(normalizedUsername)) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS, "Username already exists");
         }
 
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS, "Email already exists");
         }
 
         User user = User.builder()
-                .username(request.getUsername())
-                .email(request.getEmail())
+                .username(normalizedUsername)
+                .email(normalizedEmail)
                 .phone(request.getPhone())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.CUSTOMER)
@@ -97,5 +101,13 @@ public class AuthService {
                 .kycStatus(user.getKycStatus())
                 .active(user.getActive())
                 .build();
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase();
+    }
+
+    private String normalizeDisplayName(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ");
     }
 }

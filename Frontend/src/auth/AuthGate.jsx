@@ -11,6 +11,6 @@ export default function AuthGate() {
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!effectiveRole) return <Navigate to="/" replace />;
   if (effectiveRole === "ADMIN") return <Navigate to="/admin" replace />;
-  if (effectiveRole === "CREDIT_OFFICER") return <Navigate to="/officer" replace />;
+  if (effectiveRole === "CREDIT_OFFICER" || effectiveRole === "LOAN_OFFICER") return <Navigate to="/officer" replace />;
   return <Navigate to="/app" replace />;
 }

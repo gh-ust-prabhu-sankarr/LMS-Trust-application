@@ -33,29 +33,12 @@ public class CustomerService {
         }
 
         Customer existing = customerRepository.findByUserId(user.getId()).orElse(null);
-        String normalizedPan = request.getPanNumber() == null ? null : request.getPanNumber().trim().toUpperCase();
-        if (normalizedPan != null && normalizedPan.isEmpty()) {
-            normalizedPan = null;
-        }
-
-        if (normalizedPan != null) {
-            String finalNormalizedPan = normalizedPan;
-            customerRepository.findByPanNumber(finalNormalizedPan).ifPresent(owner -> {
-                if (existing == null || !owner.getId().equals(existing.getId())) {
-                    throw new BusinessException(ErrorCode.INVALID_PAN, "PAN already registered");
-                }
-            });
-        }
-
         Customer customer = existing != null ? existing : new Customer();
         customer.setUserId(user.getId());
-        customer.setFullName(request.getFullName());
-        customer.setPhone(request.getPhone());
-        if (normalizedPan != null) {
-            customer.setPanNumber(normalizedPan);
-        }
-        customer.setAddress(request.getAddress());
-        customer.setEmploymentType(request.getEmploymentType());
+        customer.setFullName(request.getFullName().trim().replaceAll("\\s+", " "));
+        customer.setPhone(request.getPhone().trim());
+        customer.setAddress(request.getAddress().trim());
+        customer.setEmploymentType(request.getEmploymentType().trim().toUpperCase());
         customer.setMonthlyIncome(request.getMonthlyIncome());
         if (customer.getKycStatus() == null) customer.setKycStatus(user.getKycStatus());
         if (customer.getCreatedAt() == null) customer.setCreatedAt(LocalDateTime.now());

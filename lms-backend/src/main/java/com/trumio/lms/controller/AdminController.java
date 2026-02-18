@@ -1,17 +1,18 @@
 package com.trumio.lms.controller;
 
 import com.trumio.lms.dto.ApiResponse;
+import com.trumio.lms.dto.CreateOfficerRequest;
 import com.trumio.lms.entity.AuditLog;
 import com.trumio.lms.entity.User;
 import com.trumio.lms.service.AuditService;
 import com.trumio.lms.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -39,20 +40,21 @@ public class AdminController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<AuditLog>> getAuditLogs(
             @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String action,
             @RequestParam(required = false) String entityType,
             @RequestParam(required = false) String entityId,
             @RequestParam(defaultValue = "50") int limit) {
-        return ResponseEntity.ok(auditService.getAuditLogs(userId, entityType, entityId, limit));
+        return ResponseEntity.ok(auditService.getAuditLogs(userId, action, entityType, entityId, limit));
     }
 
     @PostMapping("/users/officer")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<User>> createCreditOfficer(
-            @RequestBody Map<String, String> request) {
+            @Valid @RequestBody CreateOfficerRequest request) {
         return ResponseEntity.ok(userService.createCreditOfficer(
-                request.get("username"),
-                request.get("email"),
-                request.get("password")
+                request.getUsername(),
+                request.getEmail(),
+                request.getPassword()
         ));
     }
 

@@ -30,8 +30,6 @@ public class Customer {
     @Indexed(unique = true)
     private String phone;
 
-    private String panNumber;
-
     private String address;
 
     private String employmentType;

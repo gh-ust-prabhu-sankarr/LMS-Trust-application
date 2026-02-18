@@ -3,6 +3,10 @@ export function getFriendlyError(error, fallback = "Something went wrong. Please
   const rawMessage = String(error?.response?.data?.message || error?.message || "").trim();
   const lower = rawMessage.toLowerCase();
 
+  if (!status && rawMessage) {
+    return rawMessage;
+  }
+
   if (!status) {
     return "Network issue. Please check your internet connection and try again.";
   }

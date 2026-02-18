@@ -10,7 +10,7 @@ const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, logout } = useAuth();
+  const { login } = useAuth();
 
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -62,11 +62,10 @@ export default function Login() {
       });
 
       if (out.role !== "CUSTOMER") {
-        logout();
         throw new Error("Use the dedicated Admin/Officer login page.");
       }
 
-      navigate("/", { replace: true });
+      navigate("/app", { replace: true });
 
     } catch (err) {
       setServerError(getFriendlyError(err, "Login failed. Please try again."));

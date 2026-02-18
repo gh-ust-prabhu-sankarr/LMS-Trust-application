@@ -5,17 +5,42 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="9d6bf706-4498-4402-a727-c352f74d4e27" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/../.idea/shelf/Uncommitted_changes_before_Update_at_14-02-2026_18_01_[Changes]/shelved.patch" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../.idea/shelf/Uncommitted_changes_before_Update_at_14-02-2026_18_01__Changes_.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/App.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/App.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/api/authApi.js" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/api/authApi.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/api/axios.js" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/api/axios.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/api/domainApi.js" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/api/domainApi.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/auth/AuthGate.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/auth/AuthGate.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/components/navbar/Navbar.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/components/navbar/Navbar.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/context/AuthContext.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/context/AuthContext.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/main.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/main.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/LandingPage.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/LandingPage.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/admin/AdminDashboard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/admin/AdminDashboard.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/app/UserDashboard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/app/UserDashboard.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/auth/Login.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/auth/Login.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/auth/Register.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/auth/Register.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/loans/applications/EducationLoanApplication.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/loans/applications/EducationLoanApplication.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/loans/applications/LoanApplication.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/loans/applications/LoanApplication.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/pages/officer/OfficerDashboard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/pages/officer/OfficerDashboard.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Frontend/src/utils/errorMessage.js" beforeDir="false" afterPath="$PROJECT_DIR$/../Frontend/src/utils/errorMessage.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/AdminController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/AdminController.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/AuthController.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/AuthController.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/CustomerRequest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/CustomerRequest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/LoanProductRequest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/LoanProductRequest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/SignupRequest.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/dto/SignupRequest.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/Customer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/entity/Customer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/exception/GlobalExceptionHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/exception/GlobalExceptionHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/AuditLogRepository.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/AuditLogRepository.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/CustomerRepository.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/repository/CustomerRepository.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuditService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuditService.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuthService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/AuthService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/CustomerService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/CustomerService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanApplicationService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanApplicationService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanProductService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/LoanProductService.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/UserService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/trumio/lms/service/UserService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/application.properties" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,21 +87,21 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Application.LoanManagementSystemApplication.executor&quot;: &quot;Run&quot;,
-    &quot;JUnit.LoanManagementSystemApplicationTests.executor&quot;: &quot;Run&quot;,
-    &quot;Maven.loan-management-app [clean,install].executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;Swathi__lms__copy&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/304492/Music/lms/JAVA_LMS_3_repo/lms-backend&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;MavenSettings&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Application.LoanManagementSystemApplication.executor": "Run",
+    "JUnit.LoanManagementSystemApplicationTests.executor": "Run",
+    "Maven.loan-management-app [clean,install].executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "Merging prabu__lms",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "C:/Users/304492/Music/lms/JAVA_LMS_3_repo/lms-backend",
+    "settings.editor.selected.configurable": "MavenSettings"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveClassesOrPackagesDialog.RECENTS_KEY">
       <recent name="com.trumio.lms.service" />
@@ -117,7 +142,7 @@
         <line-breakpoint enabled="true" type="java-method">
           <url>file://$PROJECT_DIR$/src/main/java/com/trumio/lms/controller/LoanApplicationController.java</url>
           <line>36</line>
-          <properties class="com.trumio.lms.controller.LoanApplicationController">
+          <properties class="com.trumio.lms.controller.LoanApplicationController" method="submitApplication">
             <option name="EMULATED" value="true" />
             <option name="WATCH_EXIT" value="false" />
           </properties>

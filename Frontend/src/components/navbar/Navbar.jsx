@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Landmark, UserCircle, LayoutDashboard, Home, LogOut, ChevronDown } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -8,11 +9,13 @@ const Navbar = () => {
   const location = useLocation();
   const { isAuthenticated, user, role, logout } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const menuRef = useRef(null);
 
   const effectiveRole = role || user?.role || "CUSTOMER";
   const isLoginRoute = location.pathname === "/login" || location.pathname.startsWith("/login/");
   const isRegisterRoute = location.pathname === "/register";
+  const roleLabel = effectiveRole === "CREDIT_OFFICER" ? "LOAN_OFFICER" : effectiveRole;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -29,7 +32,9 @@ const Navbar = () => {
   const getDashboardRoute = () => {
     switch (effectiveRole) {
       case "ADMIN": return "/admin";
-      case "CREDIT_OFFICER": return "/officer";
+      case "CREDIT_OFFICER":
+      case "LOAN_OFFICER":
+        return "/officer";
       default: return "/dashboard";
     }
   };
@@ -37,8 +42,37 @@ const Navbar = () => {
   const handleLogout = () => {
     logout();
     setIsMenuOpen(false);
+    setShowLogoutConfirm(false);
     navigate("/");
   };
+
+  const logoutModal = showLogoutConfirm && typeof document !== "undefined"
+    ? createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-600">Confirm Logout</p>
+            <h3 className="mt-2 text-lg font-bold text-slate-900">Are you sure you want to log out?</h3>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-xl border border-rose-700 bg-rose-600 px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-rose-700"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
 
   return (
     <nav className="fixed top-0 w-full z-[100] bg-white/70 backdrop-blur-2xl border-b border-slate-200/50">
@@ -72,9 +106,16 @@ const Navbar = () => {
                 className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-50 border border-slate-200 hover:border-emerald-500 transition-all group"
               >
                 <UserCircle size={24} className="text-slate-600 group-hover:text-emerald-600" />
-                <span className="text-[11px] font-black uppercase tracking-widest text-slate-700 hidden sm:block">
-                  {user?.username || "Account"}
-                </span>
+                <div className="hidden sm:flex flex-col items-start leading-tight">
+                  <span className="text-[11px] font-black uppercase tracking-widest text-slate-700">
+                    {user?.username || "Account"}
+                  </span>
+                  {roleLabel && roleLabel !== "CUSTOMER" && (
+                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700">
+                      {roleLabel}
+                    </span>
+                  )}
+                </div>
                 <ChevronDown 
                   size={14} 
                   className={`text-slate-400 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''}`} 
@@ -87,6 +128,9 @@ const Navbar = () => {
                   <div className="px-4 py-2 border-b border-slate-50 mb-1">
                     <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Signed in as</p>
                     <p className="text-sm font-bold text-slate-900 truncate">{user?.email || user?.username}</p>
+                    {roleLabel && roleLabel !== "CUSTOMER" && (
+                      <p className="mt-1 text-[10px] font-black uppercase tracking-wider text-emerald-700">{roleLabel}</p>
+                    )}
                   </div>
 
                   {/* Shared Links */}
@@ -113,7 +157,7 @@ const Navbar = () => {
 
                   {/* Logout */}
                   <button
-                    onClick={handleLogout}
+                    onClick={() => { setShowLogoutConfirm(true); setIsMenuOpen(false); }}
                     className="w-full flex items-center gap-3 px-4 py-3 text-rose-600 hover:bg-rose-50 transition-colors"
                   >
                     <LogOut size={18} />
@@ -152,6 +196,7 @@ const Navbar = () => {
           )}
         </div>
       </div>
+      {logoutModal}
     </nav>
   );
 };

@@ -3,6 +3,8 @@ import { AnimatePresence } from "framer-motion";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, customerApi, kycApi, loanApi, unwrap, userApi, fileApi } from "../../api/domainApi.js";
 import { getFriendlyError } from "../../utils/errorMessage.js";
+import { usePopup } from "../../components/ui/PopupProvider.jsx";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { 
   ChevronRight, ChevronLeft,
   ClipboardCheck, UserCheck, AlertCircle, 
@@ -59,11 +61,14 @@ const sortByNewest = (a, b) => {
 };
 
 export default function OfficerDashboard() {
-  const [activeTab, setActiveTab] = useState("kyc"); 
+  const { user } = useAuth();
+  const { showPopup } = usePopup();
+  const [activeTab, setActiveTab] = useState("kyc");
   const [kycStatusFilter, setKycStatusFilter] = useState("PENDING");
   const [kycByStatus, setKycByStatus] = useState({ PENDING: [], APPROVED: [], REJECTED: [] });
   const [loanByStatus, setLoanByStatus] = useState({ SUBMITTED: [], UNDER_REVIEW: [], APPROVED: [] });
   const [customerById, setCustomerById] = useState({});
+  const [userById, setUserById] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   
@@ -80,13 +85,9 @@ export default function OfficerDashboard() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [loanDocs, setLoanDocs] = useState([]);
   const [loanDocsLoading, setLoanDocsLoading] = useState(false);
-  const [txCustomers, setTxCustomers] = useState([]);
-  const [txCustomersLoading, setTxCustomersLoading] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [txLoading, setTxLoading] = useState(false);
   const [txError, setTxError] = useState("");
-  const [txCustomerPage, setTxCustomerPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
   const [txSearch, setTxSearch] = useState("");
 
@@ -94,10 +95,11 @@ export default function OfficerDashboard() {
     setIsLoading(true);
     setLoadError("");
     try {
-      const [kycResRaw, loanResRaw, userRes] = await Promise.all([
+      const [kycResRaw, loanResRaw, userRes, usersRes] = await Promise.all([
         Promise.allSettled(KYC_STATUSES.map((s) => kycApi.getByStatus(s))),
         Promise.allSettled(LOAN_STATUSES.map((s) => loanApi.getByStatus(s))),
         userApi.getMe(),
+        adminApi.getUsers(),
       ]);
 
       const kycData = {};
@@ -115,6 +117,8 @@ export default function OfficerDashboard() {
       setKycByStatus(kycData);
       setLoanByStatus(loanData);
       unwrap(userRes);
+      const users = unwrap(usersRes) || [];
+      setUserById(Object.fromEntries(users.map((u) => [u.id, u])));
 
       const allEntries = [...Object.values(kycData).flat(), ...Object.values(loanData).flat()];
       const uIds = [
@@ -179,8 +183,9 @@ export default function OfficerDashboard() {
       action === "approve" ? await kycApi.approve(id, remarks) : await kycApi.reject(id, remarks);
       setSelectedKyc(null);
       await loadInitialData(); // Refresh lists
+      showPopup(`KYC ${action === "approve" ? "approved" : "rejected"} successfully.`, { type: "success" });
     } catch (err) {
-      alert(getFriendlyError(err, "KYC authorization failed."));
+      showPopup(getFriendlyError(err, "KYC authorization failed."), { type: "error" });
     }
   };
 
@@ -218,8 +223,11 @@ export default function OfficerDashboard() {
       setLoanActionSuccess("Action completed successfully.");
       await loadInitialData();
       setSelectedLoan(null);
+      showPopup("Action completed successfully.", { type: "success" });
     } catch (err) {
-      setLoanActionError(getFriendlyError(err, "Action failed"));
+      const message = getFriendlyError(err, "Action failed");
+      setLoanActionError(message);
+      showPopup(message, { type: "error" });
     } finally {
       setActionBusy(false);
     }
@@ -229,15 +237,26 @@ export default function OfficerDashboard() {
     await loanApi.moveToReview(selectedLoan.id);
   });
 
+  const isAlreadyInReviewTransition = (err) => {
+    const msg = String(err?.response?.data?.message || err?.message || "").toLowerCase();
+    return msg.includes("invalid state transition") || msg.includes("under_review");
+  };
+
+  const ensureUnderReview = async (loanId, status) => {
+    if (String(status || "").toUpperCase() !== "SUBMITTED") return;
+    try {
+      await loanApi.moveToReview(loanId);
+    } catch (err) {
+      if (!isAlreadyInReviewTransition(err)) throw err;
+    }
+  };
+
   const approveLoan = () => withLoanAction(async () => {
     const amount = Number(approvedAmount || 0);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new Error("Enter a valid approved amount");
     }
-    // Backend allows approval only from UNDER_REVIEW; auto-transition when current state is SUBMITTED.
-    if (selectedLoan.status === "SUBMITTED") {
-      await loanApi.moveToReview(selectedLoan.id);
-    }
+    await ensureUnderReview(selectedLoan.id, selectedLoan.status);
     await loanApi.approve(selectedLoan.id, {
       approvedAmount: amount,
       comments: approvalComments || "Approved by loan officer",
@@ -247,9 +266,7 @@ export default function OfficerDashboard() {
   const rejectLoan = () => withLoanAction(async () => {
     const reason = rejectionReason.trim();
     if (!reason) throw new Error("Enter rejection reason");
-    if (selectedLoan.status === "SUBMITTED") {
-      await loanApi.moveToReview(selectedLoan.id);
-    }
+    await ensureUnderReview(selectedLoan.id, selectedLoan.status);
     await loanApi.reject(selectedLoan.id, reason);
   });
 
@@ -261,101 +278,109 @@ export default function OfficerDashboard() {
     return Number.isFinite(n) ? n : null;
   };
 
-  const loadTransactionCustomers = useCallback(async () => {
-    setTxCustomersLoading(true);
+  const resolveCustomerEmail = useCallback(
+    (customerId) => {
+      const customer = customerById[customerId];
+      if (!customer) return "-";
+      return userById[customer.userId]?.email || "-";
+    },
+    [customerById, userById]
+  );
+
+  const loadAllTransactions = useCallback(async () => {
     setTxError("");
+    setTxLoading(true);
     try {
       const res = await adminApi.getUsers();
       const users = unwrap(res) || [];
-      setTxCustomers(users.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER"));
-    } catch (err) {
-      // Fallback to customers already visible in officer lists.
-      const fallback = Object.entries(customerById).map(([id, profile]) => ({
-        id,
-        username: profile?.username || profile?.fullName || "Customer",
-        email: profile?.email || "-",
-      }));
-      setTxCustomers(fallback);
-      if (!fallback.length) {
-        setTxError(err?.response?.data?.message || err?.message || "Failed to load customers.");
-      }
-    } finally {
-      setTxCustomersLoading(false);
-    }
-  }, [customerById]);
-
-  const loadTransactionsForCustomer = async (customer) => {
-    if (!customer?.id) return;
-    setTxLoading(true);
-    setTxError("");
-    try {
-      const res = await adminApi.getAuditByUser(customer.id);
-      const audits = unwrap(res) || res?.data || [];
-      const rows = audits
-        .filter((a) => {
-          const details = String(a?.details || "").toLowerCase();
-          const isRepayment = details.includes("repayment of");
-          const isCheckout = details.includes("checkout session");
-          return isRepayment && !isCheckout;
-        })
-        .map((a) => ({
-          id: `${customer?.id || "u"}-${a?.id || a?.timestamp || Math.random()}`,
-          amount: parseAuditAmount(a?.details),
-          details: a?.details || "-",
-          transactionRef: a?.entityId || "-",
-          timestamp: a?.timestamp || null,
-        }));
-
+      const customers = users.filter((u) => String(u?.role || "").toUpperCase() === "CUSTOMER");
+      const auditResults = await Promise.allSettled(
+        customers.map((customer) => adminApi.getAuditByUser(customer.id))
+      );
+      const rows = auditResults.flatMap((result, idx) => {
+        if (result.status !== "fulfilled") return [];
+        const customer = customers[idx];
+        const audits = unwrap(result.value) || result.value?.data || [];
+        const onlineRefs = new Set(
+          audits
+            .filter((a) => String(a?.action || "").toUpperCase() === "STRIPE_PAYMENT_CONFIRMED")
+            .map((a) => String(a?.entityId || ""))
+            .filter(Boolean)
+        );
+        const failedRefs = new Set(
+          audits
+            .filter((a) => {
+              const action = String(a?.action || "").toUpperCase();
+              const details = String(a?.details || "").toLowerCase();
+              return action.includes("FAILED") || details.includes("failed") || details.includes("cancel");
+            })
+            .map((a) => String(a?.entityId || ""))
+            .filter(Boolean)
+        );
+        return audits
+          .filter((a) => {
+            const details = String(a?.details || "").toLowerCase();
+            const isRepayment = details.includes("repayment of");
+            const isCheckout = details.includes("checkout session");
+            return isRepayment && !isCheckout;
+          })
+          .map((a) => ({
+            id: a?.id || `${customer?.id || "u"}-${a?.timestamp || Math.random()}`,
+            amount: parseAuditAmount(a?.details),
+            details: a?.details || "-",
+            transactionRef: a?.entityId || "-",
+            timestamp: a?.timestamp || null,
+            customerName: customer?.username || customerById[customer?.id]?.fullName || "Customer",
+            customerEmail: customer?.email || resolveCustomerEmail(customer?.id),
+            method: onlineRefs.has(String(a?.entityId || "")) ? "ONLINE" : "OFFLINE",
+            status: failedRefs.has(String(a?.entityId || "")) ? "FAILED" : "SUCCESS",
+          }));
+      });
       rows.sort((a, b) => {
         const ta = a?.timestamp ? new Date(a.timestamp).getTime() : 0;
         const tb = b?.timestamp ? new Date(b.timestamp).getTime() : 0;
         return tb - ta;
       });
-
-      setSelectedCustomer(customer);
       setTransactions(rows);
       setTxPage(1);
     } catch (err) {
-      setTxError(err?.response?.data?.message || err?.message || "Failed to fetch transaction data.");
+      setTxError(err?.response?.data?.message || err?.message || "Failed to load transactions.");
       setTransactions([]);
     } finally {
       setTxLoading(false);
     }
-  };
+  }, [customerById, resolveCustomerEmail]);
 
   useEffect(() => {
     if (activeTab !== "transactions") return;
-    loadTransactionCustomers();
-    setSelectedCustomer(null);
+    loadAllTransactions();
     setTransactions([]);
     setTxPage(1);
-    setTxCustomerPage(1);
     setTxSearch("");
-  }, [activeTab, loadTransactionCustomers]);
-
-  const filteredTxCustomers = useMemo(() => {
-    const q = txSearch.trim().toLowerCase();
-    if (!q) return txCustomers;
-    return txCustomers.filter((u) =>
-      String(u?.username || "").toLowerCase().includes(q) ||
-      String(u?.email || "").toLowerCase().includes(q)
-    );
-  }, [txCustomers, txSearch]);
-
-  const totalTxCustomerPages = Math.max(1, Math.ceil(filteredTxCustomers.length / TX_ITEMS_PER_PAGE));
-  const paginatedTxCustomers = useMemo(
-    () => filteredTxCustomers.slice((txCustomerPage - 1) * TX_ITEMS_PER_PAGE, txCustomerPage * TX_ITEMS_PER_PAGE),
-    [filteredTxCustomers, txCustomerPage]
-  );
-  const totalTxPages = Math.max(1, Math.ceil(transactions.length / TX_ITEMS_PER_PAGE));
+  }, [activeTab, loadAllTransactions]);
+  const filteredTransactions = useMemo(() => {
+    const query = txSearch.trim().toLowerCase();
+    return transactions.filter((tx) => {
+      if (query) {
+        const matchesQuery =
+          String(tx?.id || "").toLowerCase().includes(query) ||
+          String(tx?.transactionRef || "").toLowerCase().includes(query) ||
+          String(tx?.customerName || "").toLowerCase().includes(query) ||
+          String(tx?.customerEmail || "").toLowerCase().includes(query);
+        if (!matchesQuery) return false;
+      }
+      return true;
+    });
+  }, [transactions, txSearch]);
+  const totalTxPages = Math.max(1, Math.ceil(filteredTransactions.length / TX_ITEMS_PER_PAGE));
   const paginatedTransactions = useMemo(
-    () => transactions.slice((txPage - 1) * TX_ITEMS_PER_PAGE, txPage * TX_ITEMS_PER_PAGE),
-    [transactions, txPage]
+    () => filteredTransactions.slice((txPage - 1) * TX_ITEMS_PER_PAGE, txPage * TX_ITEMS_PER_PAGE),
+    [filteredTransactions, txPage]
   );
   const formatDateTime = (val) => (val ? new Date(val).toLocaleString("en-IN") : "-");
 
   useEffect(() => {
-    setTxCustomerPage(1);
+    setTxPage(1);
   }, [txSearch]);
 
 
@@ -380,7 +405,7 @@ export default function OfficerDashboard() {
   if (isLoading) return <PortalShell title="Loading...">Syncing Ledger...</PortalShell>;
 
   return (
-    <PortalShell>
+    <PortalShell title="Loan Officer Dashboard" subtitle={`Welcome Loan Officer ${user?.username || ""}`}>
       
       {/* HEADER SECTION */}
      
@@ -399,7 +424,6 @@ export default function OfficerDashboard() {
             </div>
           )}
           <AnimatePresence mode="wait">
-            
             {/* KYC TAB */}
             {activeTab === "kyc" && (
               <div className="space-y-8">
@@ -420,6 +444,7 @@ export default function OfficerDashboard() {
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                         <th className="p-6">Applicant</th>
+                        <th className="p-6">Email</th>
                         <th className="p-6">Date of Birth</th>
                         <th className="p-6">Status</th>
                         <th className="p-6 text-right">Action</th>
@@ -437,6 +462,7 @@ export default function OfficerDashboard() {
                               <p className="font-bold text-slate-900">{kyc.fullName || "Unknown"}</p>
                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">ID: {kyc.id}</p>
                             </td>
+                            <td className="p-6 text-xs text-slate-600">{resolveCustomerEmail(kyc.customerId)}</td>
                             <td className="p-6 text-sm font-bold text-slate-900">{kyc.dob || "N/A"}</td>
                             <td className="p-6">
                               <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${STATUS_TONE[kyc.status]}`}>
@@ -452,7 +478,7 @@ export default function OfficerDashboard() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="4" className="p-20 text-center">
+                          <td colSpan="5" className="p-20 text-center">
                             <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">
                               No {kycStatusFilter} records found
                             </p>
@@ -509,6 +535,8 @@ export default function OfficerDashboard() {
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                         <th className="p-6">Applicant</th>
+                        <th className="p-6">Email</th>
+                        <th className="p-6">Reference ID</th>
                         <th className="p-6">Capital Requested</th>
                         <th className="p-6">Status</th>
                         <th className="p-6 text-right">Action</th>
@@ -522,6 +550,8 @@ export default function OfficerDashboard() {
                               <p className="font-bold text-slate-900">{customerById[loan.customerId]?.fullName || "Retrieving Profile..."}</p>
                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{loan.loanProductName}</p>
                             </td>
+                            <td className="p-6 text-xs text-slate-600">{resolveCustomerEmail(loan.customerId)}</td>
+                            <td className="p-6 text-xs font-mono text-slate-600">{loan.id}</td>
                             <td className="p-6 text-sm font-bold text-slate-900">{money(loan.requestedAmount)}</td>
                             <td className="p-6">
                               <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${STATUS_TONE[loan.status]}`}>
@@ -537,7 +567,7 @@ export default function OfficerDashboard() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="4" className="p-20 text-center">
+                          <td colSpan="6" className="p-20 text-center">
                             <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">Pipeline is empty</p>
                           </td>
                         </tr>
@@ -598,8 +628,8 @@ export default function OfficerDashboard() {
                     </div>
                   </div>
                   <button
-                    onClick={() => selectedCustomer && loadTransactionsForCustomer(selectedCustomer)}
-                    disabled={txLoading || !selectedCustomer}
+                    onClick={loadAllTransactions}
+                    disabled={txLoading}
                     className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
                   >
                     {txLoading ? "Refreshing..." : "Refresh"}
@@ -610,82 +640,34 @@ export default function OfficerDashboard() {
                   <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{txError}</p>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
-                  <div className="lg:col-span-4 border-r border-slate-100">
-                    <div className="px-6 py-4 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Customers
-                    </div>
-                    <div className="px-6 py-3 border-b border-slate-100">
+                <div className="px-6 py-3 border-b border-slate-100">
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                           type="text"
                           value={txSearch}
                           onChange={(e) => setTxSearch(e.target.value)}
-                          placeholder="Search customer..."
+                          placeholder="Search by ref id, name or email..."
                           className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
                         />
                       </div>
-                    </div>
-                    {txCustomersLoading ? (
-                      <div className="px-6 py-8 text-sm text-slate-500">Loading customers...</div>
-                    ) : (
-                      <div className="divide-y divide-slate-100">
-                        {paginatedTxCustomers.map((u) => (
-                          <button
-                            key={u.id}
-                            onClick={() => loadTransactionsForCustomer(u)}
-                            className={`w-full text-left px-6 py-4 transition-colors ${
-                              selectedCustomer?.id === u.id ? "bg-emerald-50" : "hover:bg-slate-50"
-                            }`}
-                          >
-                            <div className="text-sm font-bold text-slate-800">{u.username}</div>
-                            <div className="text-[10px] text-slate-400">{u.email}</div>
-                          </button>
-                        ))}
-                        {!paginatedTxCustomers.length && (
-                          <div className="px-6 py-8 text-sm text-slate-500">No matching customers.</div>
-                        )}
-                      </div>
-                    )}
-                    {txCustomers.length > 0 && totalTxCustomerPages > 1 && (
-                      <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                          Page {txCustomerPage} of {totalTxCustomerPages}
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            disabled={txCustomerPage === 1}
-                            onClick={() => setTxCustomerPage((p) => p - 1)}
-                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
-                          >
-                            <ChevronLeft size={16} />
-                          </button>
-                          <button
-                            disabled={txCustomerPage >= totalTxCustomerPages}
-                            onClick={() => setTxCustomerPage((p) => p + 1)}
-                            className="p-2 rounded-lg border bg-white disabled:opacity-30 hover:bg-slate-50 transition-all"
-                          >
-                            <ChevronRight size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="lg:col-span-8">
-                    {!selectedCustomer ? (
-                      <div className="p-10 text-center text-sm text-slate-500">Select a customer to view transactions.</div>
-                    ) : txLoading ? (
+                </div>
+                <div>
+                    {txLoading ? (
                       <div className="p-6 text-sm text-slate-500">Loading transactions...</div>
-                    ) : transactions.length ? (
+                    ) : filteredTransactions.length ? (
                       <>
                         <div className="overflow-x-auto">
                           <table className="w-full text-left">
                             <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
                               <tr>
+                                <th className="px-6 py-4">Customer</th>
+                                <th className="px-6 py-4">Email</th>
                                 <th className="px-6 py-4">Date & Time</th>
                                 <th className="px-6 py-4">Amount</th>
+                                <th className="px-6 py-4">Reference ID</th>
+                                <th className="px-6 py-4">Status</th>
+                                <th className="px-6 py-4">Method</th>
                                 <th className="px-6 py-4">Transaction Ref</th>
                                 <th className="px-6 py-4">Details</th>
                               </tr>
@@ -693,10 +675,15 @@ export default function OfficerDashboard() {
                             <tbody className="divide-y divide-slate-100">
                               {paginatedTransactions.map((tx) => (
                                 <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-6 py-4 text-sm font-semibold text-slate-800">{tx.customerName || "-"}</td>
+                                  <td className="px-6 py-4 text-xs text-slate-600">{tx.customerEmail || "-"}</td>
                                   <td className="px-6 py-4 text-sm text-slate-700">{formatDateTime(tx.timestamp)}</td>
                                   <td className="px-6 py-4 text-sm font-semibold text-slate-800">
                                     {Number(tx?.amount || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </td>
+                                  <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx.id}</td>
+                                  <td className={`px-6 py-4 text-xs font-black ${tx.status === "FAILED" ? "text-rose-600" : "text-emerald-700"}`}>{tx.status}</td>
+                                  <td className="px-6 py-4 text-xs font-semibold text-slate-700">{tx.method}</td>
                                   <td className="px-6 py-4 text-xs font-mono text-slate-600">{tx.transactionRef}</td>
                                   <td className="px-6 py-4 text-xs text-slate-600">{tx.details}</td>
                                 </tr>
@@ -729,9 +716,8 @@ export default function OfficerDashboard() {
                         )}
                       </>
                     ) : (
-                      <div className="p-10 text-center text-sm text-slate-500">No repayment records found for this customer.</div>
+                      <div className="p-10 text-center text-sm text-slate-500">No repayment records found.</div>
                     )}
-                  </div>
                 </div>
               </section>
             )}
@@ -776,8 +762,8 @@ export default function OfficerDashboard() {
                     </div>
 
                     <div className="space-y-6">
-                        <DocumentAction label="PAN Card Document" fileId={selectedKyc.panDocumentFileId} fileName="PAN_DOC.pdf" />
-                        <DocumentAction label="Aadhaar Card Document" fileId={selectedKyc.aadhaarDocumentFileId} fileName="AADHAAR_DOC.pdf" />
+                        <DocumentAction label="PAN Card Document" fileId={selectedKyc.panDocumentFileId} fileName="PAN_DOC.pdf" onError={showPopup} />
+                        <DocumentAction label="Aadhaar Card Document" fileId={selectedKyc.aadhaarDocumentFileId} fileName="AADHAAR_DOC.pdf" onError={showPopup} />
                     </div>
                 </div>
             </div>
@@ -802,6 +788,7 @@ export default function OfficerDashboard() {
                     <div className="space-y-8">
                         <div className="grid grid-cols-2 gap-4">
                             <ModalInfo label="Applicant" value={customerById[selectedLoan.customerId]?.fullName || "Unknown"} />
+                            <ModalInfo label="Email" value={resolveCustomerEmail(selectedLoan.customerId)} />
                             <ModalInfo label="Requested Capital" value={money(selectedLoan.requestedAmount)} />
                             <ModalInfo label="Monthly Yield" value={money(customerById[selectedLoan.customerId]?.monthlyIncome)} />
                             <ModalInfo label="CIBIL Index" value={customerById[selectedLoan.customerId]?.creditScore || "N/A"} />
@@ -894,6 +881,7 @@ export default function OfficerDashboard() {
                               label={doc.displayName || doc.fileName || "Loan Document"}
                               fileId={doc.id}
                               fileName={doc.fileName || "document.pdf"}
+                              onError={showPopup}
                             />
                           ))
                         ) : (
@@ -922,18 +910,18 @@ function ModalInfo({ label, value }) {
     );
 }
 
-function DocumentAction({ label, fileId, fileName, placeholder = false }) {
+function DocumentAction({ label, fileId, fileName, placeholder = false, onError }) {
     const handleDownload = () => {
         if (!fileId || placeholder) return;
         fileApi.download(fileId, fileName).catch((err) => {
-          alert(getFriendlyError(err, "Unable to download document."));
+          onError?.(getFriendlyError(err, "Unable to download document."), { type: "error" });
         });
     };
 
     const handleVerify = () => {
         if (!fileId || placeholder) return;
         fileApi.openInNewTab(fileId).catch((err) => {
-          alert(getFriendlyError(err, "Unable to open document."));
+          onError?.(getFriendlyError(err, "Unable to open document."), { type: "error" });
         });
     };
 

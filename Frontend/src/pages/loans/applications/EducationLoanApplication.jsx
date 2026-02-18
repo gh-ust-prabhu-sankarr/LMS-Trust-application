@@ -3,9 +3,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { GraduationCap, ArrowLeft, ShieldCheck, School, BookOpen, IndianRupee } from "lucide-react";
 import Navbar from "../../../components/navbar/Navbar.jsx";
+import { usePopup } from "../../../components/ui/PopupProvider.jsx";
 
 const EducationLoanApplication = () => {
   const navigate = useNavigate();
+  const { showPopup } = usePopup();
   const { state } = useLocation();
 
   const {
@@ -32,7 +34,7 @@ const EducationLoanApplication = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    alert("Application submitted for review.");
+    showPopup("Application submitted for review.", { type: "success" });
     navigate("/");
   };
 

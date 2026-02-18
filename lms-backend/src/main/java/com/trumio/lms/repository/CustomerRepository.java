@@ -9,6 +9,4 @@ import java.util.Optional;
 @Repository
 public interface CustomerRepository extends MongoRepository<Customer, String> {
     Optional<Customer> findByUserId(String userId);
-    Optional<Customer> findByPanNumber(String panNumber);
-    Boolean existsByPanNumber(String panNumber);
 }

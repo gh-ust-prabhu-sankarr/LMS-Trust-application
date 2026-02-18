@@ -37,7 +37,7 @@ public class AuditService {
         return auditLogRepository.findByEntityTypeAndEntityId(entityType, entityId);
     }
 
-    public List<AuditLog> getAuditLogs(String userId, String entityType, String entityId, int limit) {
+    public List<AuditLog> getAuditLogs(String userId, String action, String entityType, String entityId, int limit) {
         int size = Math.min(Math.max(limit, 1), 200);
         List<AuditLog> logs;
 
@@ -49,6 +49,13 @@ public class AuditService {
             logs = auditLogRepository.findByEntityType(entityType);
         } else {
             logs = auditLogRepository.findAll();
+        }
+
+        if (action != null && !action.isBlank()) {
+            String expected = action.trim().toUpperCase();
+            logs = logs.stream()
+                    .filter(log -> expected.equalsIgnoreCase(String.valueOf(log.getAction())))
+                    .toList();
         }
 
         logs.sort(Comparator.comparing(AuditLog::getTimestamp, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
