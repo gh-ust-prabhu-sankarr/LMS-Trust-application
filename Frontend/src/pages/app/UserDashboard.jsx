@@ -169,6 +169,7 @@ export default function UserDashboard() {
   const [kycBusy, setKycBusy] = useState(false);
   const [kycError, setKycError] = useState("");
   const [kycSuccess, setKycSuccess] = useState("");
+  const [kycFieldErrors, setKycFieldErrors] = useState({});
 
   const formatDate = (val) => val ? new Date(val).toLocaleDateString("en-IN") : "-";
 
@@ -177,7 +178,11 @@ export default function UserDashboard() {
     try {
       const [pRes, lRes] = await Promise.all([customerApi.getMyProfile(), loanApi.getMyLoans()]);
       const p = pRes.data;
-      setProfile(p);
+      setProfile({
+        ...(p || {}),
+        fullName: p?.fullName || registeredName || "",
+        phone: p?.phone || registeredPhone || "",
+      });
       setProfileForm({
         fullName: p?.fullName || registeredName || "",
         phone: p?.phone || registeredPhone || "",
@@ -381,7 +386,9 @@ export default function UserDashboard() {
     const errors = validateProfile(payload);
     if (Object.keys(errors).length) {
       setProfileFieldErrors(errors);
-      setProfileError("Please fix highlighted fields.");
+      const firstError = Object.values(errors)[0] || "Please fix highlighted fields.";
+      setProfileError(firstError);
+      showPopup(firstError, { type: "error" });
       return;
     }
 
@@ -408,7 +415,9 @@ export default function UserDashboard() {
         }
         setProfileFieldErrors(mapped);
       }
-      setProfileError(e?.response?.data?.message || e?.message || "Failed to update profile");
+      const message = e?.response?.data?.message || e?.message || "Failed to update profile";
+      setProfileError(message);
+      showPopup(message, { type: "error" });
     } finally {
       setProfileBusy(false);
     }
@@ -494,6 +503,8 @@ export default function UserDashboard() {
       .download(id, name)
       .catch((e) => showPopup(getFriendlyError(e, "Download failed"), { type: "error" }));
   const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
+  const PAN_RX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+  const AADHAAR_RX = /^[0-9]{12}$/;
 
   const openAgreementModal = (loan) => {
     setAgreementLoan(loan);
@@ -542,6 +553,7 @@ export default function UserDashboard() {
     setKycEditing(false);
     setKycError("");
     setKycSuccess("");
+    setKycFieldErrors({});
     setPanFile(null);
     setAadhaarFile(null);
     if (myKyc) {
@@ -557,6 +569,7 @@ export default function UserDashboard() {
   const submitKyc = async () => {
     setKycError("");
     setKycSuccess("");
+    setKycFieldErrors({});
 
     const payload = {
       fullName: kycForm.fullName.trim(),
@@ -565,16 +578,31 @@ export default function UserDashboard() {
       aadhaarNumber: kycForm.aadhaarNumber.trim(),
     };
 
-    if (!payload.fullName || !payload.dob || !payload.panNumber || !payload.aadhaarNumber) {
-      setKycError("Fill all KYC fields.");
+    const errors = {};
+    if (!payload.fullName) errors.fullName = "Full name is required.";
+    if (!payload.dob) errors.dob = "DOB is required.";
+    if (!payload.panNumber) errors.panNumber = "PAN is required.";
+    else if (!PAN_RX.test(payload.panNumber)) errors.panNumber = "PAN format must be ABCDE1234F.";
+    if (!payload.aadhaarNumber) errors.aadhaarNumber = "Aadhaar is required.";
+    else if (!AADHAAR_RX.test(payload.aadhaarNumber)) errors.aadhaarNumber = "Aadhaar must be exactly 12 digits.";
+
+    if (Object.keys(errors).length) {
+      setKycFieldErrors(errors);
+      const firstError = Object.values(errors)[0];
+      setKycError(firstError);
+      showPopup(firstError, { type: "error" });
       return;
     }
     if (!panFile || !aadhaarFile) {
-      setKycError("Upload both PAN and Aadhaar documents.");
+      const fileError = "Upload both PAN and Aadhaar documents.";
+      setKycError(fileError);
+      showPopup(fileError, { type: "error" });
       return;
     }
     if (kycLocked) {
-      setKycError(`KYC updates are locked until ${formatDate(nextEligibleAt)}.`);
+      const lockError = `KYC updates are locked until ${formatDate(nextEligibleAt)}.`;
+      setKycError(lockError);
+      showPopup(lockError, { type: "error" });
       return;
     }
 
@@ -588,7 +616,9 @@ export default function UserDashboard() {
       setPanFile(null);
       setAadhaarFile(null);
     } catch (e) {
-      setKycError(getFriendlyError(e, "KYC submission failed"));
+      const message = getFriendlyError(e, "KYC submission failed");
+      setKycError(message);
+      showPopup(message, { type: "error" });
     } finally {
       setKycBusy(false);
     }
@@ -695,8 +725,8 @@ export default function UserDashboard() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <InfoBox label="Legal Name" value={profile?.fullName} />
-                      <InfoBox label="Contact" value={profile?.phone} />
+                      <InfoBox label="Legal Name" value={profile?.fullName || profileForm?.fullName || registeredName || ""} />
+                      <InfoBox label="Contact" value={profile?.phone || profileForm?.phone || registeredPhone || ""} />
                       <InfoBox label="Employment" value={getEmploymentLabel(profile?.employmentType || "")} />
                       <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
                       <InfoBox label="Address" value={profile?.address} />
@@ -758,38 +788,44 @@ export default function UserDashboard() {
                   ) : (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <Field label="Full Name">
-                          <input
-                            value={kycForm.fullName}
-                            onChange={(e) => handleKycField("fullName", e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
-                            placeholder="As per PAN"
-                          />
-                        </Field>
-                        <Field label="DOB">
-                          <input
-                            type="date"
-                            value={kycForm.dob}
-                            onChange={(e) => handleKycField("dob", e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
-                          />
-                        </Field>
-                        <Field label="PAN Number">
-                          <input
-                            value={kycForm.panNumber}
-                            onChange={(e) => handleKycField("panNumber", e.target.value.toUpperCase())}
-                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
-                            placeholder="ABCDE1234F"
-                          />
-                        </Field>
-                        <Field label="Aadhaar Number">
-                          <input
-                            value={kycForm.aadhaarNumber}
-                            onChange={(e) => handleKycField("aadhaarNumber", e.target.value)}
-                            className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
-                            placeholder="12 digit Aadhaar"
-                          />
-                        </Field>
+                      <Field label="Full Name" error={kycFieldErrors.fullName}>
+                        <input
+                          value={kycForm.fullName}
+                          onChange={(e) => handleKycField("fullName", e.target.value)}
+                          className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${kycFieldErrors.fullName ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                          placeholder="As per PAN"
+                        />
+                      </Field>
+                      <Field label="DOB" error={kycFieldErrors.dob}>
+                        <input
+                          type="date"
+                          value={kycForm.dob}
+                          onChange={(e) => handleKycField("dob", e.target.value)}
+                          className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${kycFieldErrors.dob ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                        />
+                      </Field>
+                      <Field label="PAN Number" error={kycFieldErrors.panNumber}>
+                        <input
+                          value={kycForm.panNumber}
+                          onChange={(e) => {
+                            handleKycField("panNumber", e.target.value.toUpperCase());
+                            setKycFieldErrors((prev) => ({ ...prev, panNumber: "" }));
+                          }}
+                          className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${kycFieldErrors.panNumber ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                          placeholder="ABCDE1234F"
+                        />
+                      </Field>
+                      <Field label="Aadhaar Number" error={kycFieldErrors.aadhaarNumber}>
+                        <input
+                          value={kycForm.aadhaarNumber}
+                          onChange={(e) => {
+                            handleKycField("aadhaarNumber", e.target.value.replace(/[^0-9]/g, "").slice(0, 12));
+                            setKycFieldErrors((prev) => ({ ...prev, aadhaarNumber: "" }));
+                          }}
+                          className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${kycFieldErrors.aadhaarNumber ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                          placeholder="12 digit Aadhaar"
+                        />
+                      </Field>
                         <Field label="PAN Card (PDF)">
                           <div className="relative border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center hover:border-emerald-400 transition-colors">
                             <UploadCloud className="text-slate-400 mb-2"/>

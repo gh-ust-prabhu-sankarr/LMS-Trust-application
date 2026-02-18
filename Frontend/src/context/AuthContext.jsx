@@ -73,21 +73,34 @@ export function AuthProvider({ children }) {
       email: normalizedIdentifier,
       password,
     });
-    const t = res?.data?.data?.token || res?.data?.token || res?.data?.access_token;
+    const loginPayload = res?.data?.data || res?.data || {};
+    const t = loginPayload?.token || res?.data?.token || res?.data?.access_token;
     if (!t) throw new Error("Token missing in response");
     setToken(t);
     setTokenState(t);
-    const r = normalizeRole(getRoleFromToken(t) || res?.data?.role || res?.data?.data?.role || null);
+    const r = normalizeRole(getRoleFromToken(t) || loginPayload?.role || null);
     setRole(r);
     if (r) localStorage.setItem(ROLE_KEY, r);
-    const userPayload = res?.data?.data?.user || res?.data?.user || null;
-    setUser(
-      userPayload || {
-        username: res?.data?.username || identifier,
-        email: res?.data?.email || null,
-        role: r,
+    const userPayload = loginPayload?.user || null;
+    setUser(userPayload || {
+      username: loginPayload?.username || normalizedIdentifier,
+      email: loginPayload?.email || null,
+      role: r,
+    });
+
+    // Hydrate missing profile fields (like phone) immediately after login.
+    try {
+      const meRes = await authApi.me();
+      const apiUser = meRes?.data?.data || meRes?.data || null;
+      const resolvedRole = normalizeRole(apiUser?.role || apiUser?.authorities?.[0]) || r;
+      setUser((prev) => ({ ...(prev || {}), ...(apiUser || {}), role: resolvedRole }));
+      if (resolvedRole) {
+        setRole(resolvedRole);
+        localStorage.setItem(ROLE_KEY, resolvedRole);
       }
-    );
+    } catch {
+      // keep basic login payload as fallback
+    }
     return { token: t, role: r };
   };
 
