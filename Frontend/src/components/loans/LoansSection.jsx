@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, ChevronLeft, ArrowRight, User, GraduationCap, Car, Briefcase, CheckCircle2, RefreshCw, Lock } from "lucide-react";
+import { ChevronRight, ChevronLeft, ArrowRight, User, GraduationCap, Car, Briefcase, CheckCircle2, RefreshCw } from "lucide-react";
 import { productApi, unwrap } from "../../api/domainApi.js";
 import { mergeLoansWithDefaults } from "../../utils/loanCatalog.js";
 
@@ -47,7 +47,7 @@ const toSlide = (loan) => ({
   active: loan?.active !== false,
 });
 
-export default function LoanSection({ isAuthenticated, onRequireLogin }) {
+export default function LoanSection({ isAuthenticated }) {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState([]);
   const [index, setIndex] = useState(0);
@@ -95,10 +95,6 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
   };
 
   const handleLearnMore = (slide) => {
-    if (!isAuthenticated) {
-      onRequireLogin?.();
-      return;
-    }
     navigate(slide.route);
   };
 
@@ -120,9 +116,7 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
 
       <div className="max-w-7xl mx-auto px-4 lg:px-16 w-full relative z-10">
         <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={scrollReveal} className="mb-10 text-center md:text-left">
-          <span className="text-emerald-700 font-bold tracking-[0.3em] uppercase text-[9px] bg-emerald-50 px-3 py-1 rounded-sm border border-emerald-100">
-            Active Portfolios
-          </span>
+          
 
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mt-3">
             <div>
@@ -234,8 +228,8 @@ export default function LoanSection({ isAuthenticated, onRequireLogin }) {
                             </>
                           ) : (
                             <>
-                              <Lock size={12} />
-                              Login to Apply
+                              <ArrowRight size={12} />
+                              Explore Loan
                             </>
                           )}
                         </motion.button>

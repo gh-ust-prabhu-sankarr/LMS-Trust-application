@@ -44,6 +44,13 @@ public class MediaFileService {
      * Upload file
      */
     public MediaFile uploadFile(MultipartFile file, String entityType, String entityId, String userId) {
+        return uploadFile(file, entityType, entityId, userId, null);
+    }
+
+    /**
+     * Upload file with optional display name
+     */
+    public MediaFile uploadFile(MultipartFile file, String entityType, String entityId, String userId, String displayName) {
         // Validate file
         ValidationUtil.validateFileType(file.getContentType());
         ValidationUtil.validateFileSize(file.getSize());
@@ -66,9 +73,13 @@ public class MediaFileService {
             Files.copy(file.getInputStream(), filePath);//saving to upload  Give me a stream of bytes from the uploaded file.
 
             // Save metadata to database
+            String resolvedDisplayName = (displayName != null && !displayName.isBlank())
+                    ? displayName.trim()
+                    : (originalFilename != null ? originalFilename : filename);
+
             MediaFile mediaFile = MediaFile.builder()
                     .fileName(originalFilename != null ? originalFilename : filename)
-                    .displayName(originalFilename != null ? originalFilename : filename)
+                    .displayName(resolvedDisplayName)
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
                     .storagePath(filePath.toString())
@@ -128,13 +139,25 @@ public class MediaFileService {
      */
     private String generateDisplayName(MediaFile file, String entityType, String entityId, int index) {
         if ("LOAN_APPLICATION".equals(entityType)) {
+            String uploadedLabel = file.getDisplayName();
+            if (uploadedLabel != null && !uploadedLabel.isBlank() && !looksLikeRawFileName(uploadedLabel)) {
+                return toLoanDocumentLabel(uploadedLabel);
+            }
+
             List<String> labels = loanApplicationRepository.findById(entityId)
                     .map(LoanApplication::getDocuments)
                     .orElse(null);
             if (labels != null && index < labels.size() && labels.get(index) != null && !labels.get(index).isBlank()) {
-                return labels.get(index);
+                String configured = labels.get(index).trim();
+                if (!isGenericDocumentLabel(configured)) {
+                    return toLoanDocumentLabel(configured);
+                }
             }
-            return "Document " + (index + 1);
+
+            String inferred = inferLoanDocumentLabel(file);
+            if (inferred != null) return inferred;
+
+            return "Loan Supporting Document";
         }
 
         String fileName = file.getFileName();
@@ -150,6 +173,48 @@ public class MediaFileService {
         }
 
         return "Document " + (index + 1);
+    }
+
+    private boolean looksLikeRawFileName(String value) {
+        return value != null && value.trim().matches(".*\\.[A-Za-z0-9]{2,5}$");
+    }
+
+    private boolean isGenericDocumentLabel(String label) {
+        if (label == null) return true;
+        String lower = label.trim().toLowerCase();
+        return lower.matches("^document\\s*\\d*$") || lower.matches("^doc\\s*\\d*$");
+    }
+
+    private String inferLoanDocumentLabel(MediaFile file) {
+        String[] candidates = new String[] { file.getDisplayName(), file.getFileName() };
+        for (String candidate : candidates) {
+            if (candidate == null || candidate.isBlank()) continue;
+
+            String normalized = candidate
+                    .toLowerCase()
+                    .replaceAll("\\.[^.]+$", "")
+                    .replace('_', ' ')
+                    .replace('-', ' ')
+                    .replaceAll("\\s+", " ")
+                    .trim();
+
+            if (normalized.contains("aadhaar") || normalized.contains("aadhar")) return "Aadhaar Card Document";
+            if (normalized.contains("pan")) return "PAN Card Document";
+            if (normalized.contains("gst")) return "GST Certificate";
+            if (normalized.contains("bank statement")) return "Bank Statement";
+            if (normalized.contains("salary slip") || normalized.contains("payslip")) return "Salary Slip";
+            if (normalized.contains("itr") || normalized.contains("income tax return")) return "ITR Document";
+            if (normalized.contains("udyam")) return "Udyam Certificate";
+        }
+        return null;
+    }
+
+    private String toLoanDocumentLabel(String rawLabel) {
+        if (rawLabel == null) return "Loan Document";
+        String label = rawLabel.trim();
+        if (label.isBlank()) return "Loan Document";
+        // Keep exact application-configured label (e.g., GST Returns, ITR, Promoter KYC)
+        return label;
     }
 
     /**

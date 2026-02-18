@@ -65,6 +65,9 @@ const getLoanApplicationErrorMessage = (err) => {
   return getFriendlyError(err, "Loan application failed.");
 };
 
+const resolveUploadDisplayName = (docName, file) =>
+  String(docName || "").trim() || String(file?.name || "").trim() || "Loan Document";
+
 export default function LoanApplication() {
   const navigate = useNavigate();
   const { slug = "" } = useParams();
@@ -79,6 +82,10 @@ export default function LoanApplication() {
   const [requestedAmount, setRequestedAmount] = useState("");
   const [tenureYears, setTenureYears] = useState("");
   const [modal, setModal] = useState({ open: false, title: "Notice", message: "", onClose: null });
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsAcceptedName, setTermsAcceptedName] = useState("");
+  const [termsNameError, setTermsNameError] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -193,9 +200,7 @@ export default function LoanApplication() {
     if (typeof callback === "function") callback();
   };
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
-
+  const submitLoanApplication = async () => {
     if (!validateDocuments()) {
       if (Object.keys(documentErrors).length > 0) {
         showModal("Please fix document upload errors before submitting.");
@@ -248,9 +253,11 @@ export default function LoanApplication() {
       }
 
       await Promise.all(
-        requiredDocuments.map((docName) =>
-          fileApi.upload(documents[docName], "LOAN_APPLICATION", loanId, docName)
-        )
+        requiredDocuments.map((docName) => {
+          const file = documents[docName];
+          const displayName = resolveUploadDisplayName(docName, file);
+          return fileApi.upload(file, "LOAN_APPLICATION", loanId, displayName);
+        })
       );
 
       await loanApi.submit(loanId);
@@ -264,6 +271,37 @@ export default function LoanApplication() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const openTermsModal = () => {
+    setTermsAccepted(false);
+    setTermsAcceptedName("");
+    setTermsNameError("");
+    setTermsOpen(true);
+  };
+
+  const closeTermsModal = () => {
+    if (submitting) return;
+    setTermsOpen(false);
+    setTermsAccepted(false);
+    setTermsAcceptedName("");
+    setTermsNameError("");
+  };
+
+  const confirmTermsAndSubmit = async () => {
+    if (!termsAccepted) return;
+    if (!termsAcceptedName.trim()) {
+      setTermsNameError("Please enter your full name.");
+      return;
+    }
+    setTermsNameError("");
+    setTermsOpen(false);
+    await submitLoanApplication();
+  };
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    openTermsModal();
   };
 
   return (
@@ -340,9 +378,6 @@ export default function LoanApplication() {
                     <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Required Documents</h3>
                     <p className="mt-1 text-xs text-slate-500">Attach all files before submitting your application.</p>
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-700">
-                    <CloudUpload size={12} /> Cloud Upload
-                  </span>
                 </div>
 
                 <div className="mt-4 flex items-center justify-between">
@@ -519,6 +554,75 @@ export default function LoanApplication() {
                 className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {termsOpen ? (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-7 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900">Loan Terms & Conditions Agreement</h3>
+            <p className="mt-1 text-sm text-slate-500">Please review and accept before submitting your loan application.</p>
+            <div className="mt-4 max-h-[380px] overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700 leading-relaxed space-y-3">
+              <p>
+                By submitting this loan application, I confirm that all personal, financial, and supporting details entered in this form are true, complete, and accurate to the best of my knowledge. I also confirm that all uploaded documents belong to me or to my authorized business entity, and that I am legally permitted to share these records for loan processing, underwriting, compliance, and identity verification purposes.
+              </p>
+              <p>
+                I authorize LMS and its authorized partners, verification agencies, and service providers to validate my KYC information, credit profile, employment or business details, banking history, repayment behavior, and other required records from permitted sources. I understand that this verification process may include checks with internal systems, regulated data providers, and risk control systems, and I provide my consent for such checks throughout the life cycle of this application.
+              </p>
+              <p>
+                I understand that loan approval is subject to lender policy, credit risk evaluation, document validation, and eligibility rules. I acknowledge that submission of this application does not create a guarantee of approval, sanction amount, interest rate, processing timeline, or disbursement. LMS may request additional documents, corrections, or clarifications at any stage before final decision, and any mismatch or unverifiable information may lead to delay, hold, or rejection of the application.
+              </p>
+              <p>
+                I accept that if any information submitted by me is found false, misleading, forged, or materially incomplete, LMS may reject or cancel this application and may take actions required under applicable policy and law. I also consent to receive communication regarding this application, including reminders, verification calls, status updates, and decision notifications via approved channels such as phone, email, SMS, and in-app communication.
+              </p>
+              <p>
+                By entering my name and confirming acceptance below, I provide my digital acknowledgment that I have read, understood, and agreed to these terms and conditions, and I voluntarily proceed with submission of this loan application.
+              </p>
+            </div>
+            <div className="mt-4 space-y-2">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Full Name (Agreement Signature)</label>
+              <input
+                type="text"
+                value={termsAcceptedName}
+                onChange={(e) => {
+                  setTermsAcceptedName(e.target.value);
+                  if (termsNameError && e.target.value.trim()) setTermsNameError("");
+                }}
+                placeholder="Enter your full name"
+                className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none transition-colors ${
+                  termsNameError ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"
+                }`}
+              />
+              {termsNameError ? <p className="text-xs font-semibold text-rose-600">{termsNameError}</p> : null}
+            </div>
+            <label className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-slate-900"
+              />
+              <span className="text-sm text-slate-700">I agree to the Terms & Conditions.</span>
+            </label>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeTermsModal}
+                disabled={submitting}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmTermsAndSubmit}
+                disabled={submitting || !termsAccepted || !termsAcceptedName.trim()}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {submitting ? "Submitting..." : "Confirm & Submit"}
               </button>
             </div>
           </div>

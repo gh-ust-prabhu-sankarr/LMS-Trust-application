@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import { Zap, Shield, Clock, TrendingUp, Users, Award } from "lucide-react";
 
 const features = [
@@ -41,6 +42,8 @@ const features = [
 ];
 
 export default function FeaturesSection() {
+  const navigate = useNavigate();
+
   const scrollToFunding = () => {
     const section = document.getElementById("loan-section");
     if (section) {
@@ -163,7 +166,7 @@ export default function FeaturesSection() {
             <div className="flex flex-col sm:flex-row gap-5">
               <button
                 type="button"
-                onClick={scrollToFunding}
+                onClick={() => navigate("/loan/personal")}
                 className="px-10 py-4 bg-slate-900 text-white font-bold uppercase text-[10px] tracking-[0.2em] rounded-xl hover:bg-emerald-800 transition-all shadow-xl hover:shadow-emerald-200/50 active:scale-95"
               >
                 Get Started Now

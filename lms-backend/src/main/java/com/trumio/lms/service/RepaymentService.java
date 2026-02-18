@@ -20,15 +20,20 @@ import com.trumio.lms.repository.LoanApplicationRepository;
 import com.trumio.lms.repository.RepaymentRepository;
 import com.trumio.lms.service.mock.PaymentGatewayService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RepaymentService {
 
     private final RepaymentRepository repaymentRepository;
@@ -39,6 +44,7 @@ public class RepaymentService {
     private final PaymentGatewayService paymentGatewayService;
     private final StripePaymentService stripePaymentService;
     private final AuditService auditService;
+    private static final Duration PENDING_TIMEOUT = Duration.ofMinutes(3);
 
     // ----------------------------
     // MOCK PAYMENT (old flow)
@@ -103,8 +109,21 @@ public class RepaymentService {
 
         // Idempotency: already SUCCESS
         Optional<Repayment> existing = repaymentRepository.findByTransactionId(sessionId);
-        if (existing.isPresent() && existing.get().getStatus() == RepaymentStatus.SUCCESS) {
-            return ApiResponse.success("Payment already processed", existing.get());
+        if (existing.isPresent()) {
+            Repayment current = existing.get();
+            if (current.getStatus() == RepaymentStatus.SUCCESS) {
+                return ApiResponse.success("Payment already processed", current);
+            }
+            if (current.getStatus() == RepaymentStatus.FAILED) {
+                return ApiResponse.success("Payment already marked as failed", current);
+            }
+            if (current.getStatus() == RepaymentStatus.PENDING && isPendingExpired(current)) {
+                current.setStatus(RepaymentStatus.FAILED);
+                Repayment failed = repaymentRepository.save(current);
+                auditService.log(userId, "STRIPE_PAYMENT_FAILED", "REPAYMENT",
+                        failed.getId(), "Pending Stripe payment auto-failed after 3 minutes");
+                return ApiResponse.success("Payment marked as failed due to timeout", failed);
+            }
         }
 
         // ✅ Verify paid session from Stripe
@@ -379,7 +398,41 @@ public class RepaymentService {
     }
 
     public List<Repayment> getRepaymentsByLoan(String loanId) {
+        expireStalePendingRepaymentsByLoan(loanId, null);
         return repaymentRepository.findByLoanApplicationId(loanId);
+    }
+
+    @Scheduled(fixedDelayString = "${app.repayment.pending-timeout-scan-ms:60000}")
+    public void expireStalePendingRepaymentsScheduler() {
+        expireStalePendingRepaymentsByLoan(null, "system");
+    }
+
+    private void expireStalePendingRepaymentsByLoan(String loanId, String actor) {
+        List<Repayment> source = loanId == null
+                ? repaymentRepository.findByStatus(RepaymentStatus.PENDING)
+                : repaymentRepository.findByLoanApplicationId(loanId);
+
+        List<Repayment> toFail = new ArrayList<>();
+        for (Repayment repayment : source) {
+            if (repayment.getStatus() != RepaymentStatus.PENDING) continue;
+            if (!isPendingExpired(repayment)) continue;
+            repayment.setStatus(RepaymentStatus.FAILED);
+            toFail.add(repayment);
+        }
+
+        if (toFail.isEmpty()) return;
+        repaymentRepository.saveAll(toFail);
+        for (Repayment failed : toFail) {
+            auditService.log(actor == null ? "system" : actor, "PAYMENT_AUTO_FAILED", "REPAYMENT",
+                    failed.getId(), "Pending payment marked FAILED after 3 minutes");
+        }
+        log.info("Auto-failed {} stale pending repayments", toFail.size());
+    }
+
+    private boolean isPendingExpired(Repayment repayment) {
+        LocalDateTime baseTime = repayment.getCreatedAt() != null ? repayment.getCreatedAt() : repayment.getPaymentDate();
+        if (baseTime == null) return false;
+        return baseTime.plus(PENDING_TIMEOUT).isBefore(LocalDateTime.now());
     }
 
     public void reconcileLoanClosure(String loanId, String userId) {

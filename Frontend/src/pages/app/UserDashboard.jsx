@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
@@ -9,7 +9,7 @@ import { usePopup } from "../../components/ui/PopupProvider.jsx";
 import { maskAadhaarNumber, maskPanNumber } from "../../utils/masking.js";
 import { 
   User, ShieldCheck, Landmark, ReceiptIndianRupee, ChevronRight, 
-  ArrowRight, FileText, Calendar, CheckCircle2, 
+  ArrowRight, FileText, Calendar, CheckCircle2, ChevronDown,
   AlertCircle, ChevronLeft, UploadCloud
 } from "lucide-react";
 
@@ -33,7 +33,38 @@ const monthlyFromAnnual = (annual) => {
 const legalFullNameRx = /^(?=.*[A-Za-z])[A-Za-z. ]+$/;
 const addressAllowedRx = /^[A-Za-z0-9\s,/#-]+$/;
 const sanitizeLegalName = (value = "") => value.replace(/[^A-Za-z.\s]/g, "");
-const formatEmploymentLabel = (value = "") => value.replaceAll("_", " ");
+const EMPLOYMENT_OPTIONS = [
+  { value: "SALARIED", label: "Salaried" },
+  { value: "SELF_EMPLOYED", label: "Self Employed" },
+  { value: "BUSINESS_OWNER", label: "Business Owner" },
+  { value: "BUSINESS", label: "Business" },
+  { value: "STUDENT", label: "Student" },
+  { value: "UNEMPLOYED", label: "Unemployed" },
+  { value: "RETIRED", label: "Retired" },
+];
+const EMPLOYMENT_LABEL_BY_VALUE = Object.fromEntries(EMPLOYMENT_OPTIONS.map((opt) => [opt.value, opt.label]));
+const EMPLOYMENT_ALIAS = {
+  SELFEMPLOYED: "SELF_EMPLOYED",
+  SELF_EMPLOYED: "SELF_EMPLOYED",
+  BUSINESSOWNER: "BUSINESS_OWNER",
+  BUSINESS_OWNER: "BUSINESS_OWNER",
+  BUSINESSMAN: "BUSINESS_OWNER",
+  BUSINESSWOMAN: "BUSINESS_OWNER",
+};
+const normalizeEmploymentType = (value = "") => {
+  const normalized = String(value || "").trim().toUpperCase().replace(/\s+/g, "_");
+  if (!normalized) return "";
+  return EMPLOYMENT_ALIAS[normalized] || normalized;
+};
+const getEmploymentLabel = (value = "") => {
+  const normalized = normalizeEmploymentType(value);
+  return EMPLOYMENT_LABEL_BY_VALUE[normalized] || normalized.replaceAll("_", " ");
+};
+const loanDropdownLabel = (loan) => {
+  const name = loan?.loanProductName || "Loan";
+  const amount = money(loan?.requestedAmount);
+  return `${name} - ${amount}`;
+};
 
 const KYC_META = {
   PENDING: { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200", icon: <AlertCircle size={14}/> },
@@ -122,7 +153,6 @@ export default function UserDashboard() {
   const [agreementName, setAgreementName] = useState("");
   const [agreementBusy, setAgreementBusy] = useState(false);
   const [agreementError, setAgreementError] = useState("");
-  const employmentOptions = ["SALARIED", "SELF_EMPLOYED", "BUSINESS_OWNER", "BUSINESS", "STUDENT", "UNEMPLOYED", "RETIRED"];
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -150,7 +180,7 @@ export default function UserDashboard() {
         fullName: p?.fullName || "",
         phone: p?.phone || "",
         address: p?.address || "",
-        employmentType: p?.employmentType || "",
+        employmentType: normalizeEmploymentType(p?.employmentType),
         annualIncome: annualFromMonthly(p?.monthlyIncome),
       });
       const loans = lRes.data || [];
@@ -217,12 +247,17 @@ export default function UserDashboard() {
     loadMyTransactions();
   }, [activeTab, myLoans]);
 
-  // Auto-fail pending transactions after 20s (client-side display only)
+  // Auto-fail pending transactions after 3 minutes (client-side display only)
   useEffect(() => {
+    const PENDING_FAIL_MS = 3 * 60 * 1000;
     const timers = [];
     myTransactions.forEach((tx) => {
       if (!isPendingStatus(tx)) return;
       const ref = tx?.txRef || tx?.id || tx?.transactionId || Math.random().toString(36).slice(2);
+      const baseRaw = tx?.createdAt || tx?.paymentDate || tx?.timestamp || null;
+      const baseTs = baseRaw ? new Date(baseRaw).getTime() : NaN;
+      const elapsed = Number.isFinite(baseTs) && baseTs > 0 ? Date.now() - baseTs : 0;
+      const delay = Math.max(0, PENDING_FAIL_MS - Math.max(0, elapsed));
       const timer = setTimeout(() => {
         setMyTransactions((prev) =>
           prev.map((item) => {
@@ -236,7 +271,7 @@ export default function UserDashboard() {
             return item;
           })
         );
-      }, 20000);
+      }, delay);
       timers.push(timer);
     });
     return () => timers.forEach(clearTimeout);
@@ -275,7 +310,7 @@ export default function UserDashboard() {
       fullName: profile?.fullName || "",
       phone: profile?.phone || "",
       address: profile?.address || "",
-      employmentType: profile?.employmentType || "",
+      employmentType: normalizeEmploymentType(profile?.employmentType),
       annualIncome: annualFromMonthly(profile?.monthlyIncome),
     });
     setProfileError("");
@@ -328,7 +363,7 @@ export default function UserDashboard() {
       fullName: profileForm.fullName.trim(),
       phone: profileForm.phone.trim(),
       address: profileForm.address.trim(),
-      employmentType: profileForm.employmentType.trim(),
+      employmentType: normalizeEmploymentType(profileForm.employmentType),
       monthlyIncome: monthlyFromAnnual(profileForm.annualIncome),
     };
 
@@ -348,7 +383,7 @@ export default function UserDashboard() {
         fullName: updated?.fullName || "",
         phone: updated?.phone || "",
         address: updated?.address || "",
-        employmentType: updated?.employmentType || "",
+        employmentType: normalizeEmploymentType(updated?.employmentType),
         annualIncome: annualFromMonthly(updated?.monthlyIncome),
       });
       setProfileSuccess("Profile updated successfully.");
@@ -413,6 +448,14 @@ export default function UserDashboard() {
   const maxAdvanceAmount = useMemo(
     () => advanceEligibleInstallments.reduce((sum, ins) => sum + pendingAmount(ins), 0),
     [advanceEligibleInstallments]
+  );
+  const loanDocuments = useMemo(
+    () =>
+      (docs || []).map((doc) => ({
+        ...doc,
+        label: doc?.displayName || doc?.fileName || "Loan Document",
+      })),
+    [docs]
   );
 
   useEffect(() => {
@@ -624,18 +667,12 @@ export default function UserDashboard() {
                         <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value.replace(/[^0-9]/g, "").slice(0, 10))} className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.phone ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`} />
                       </Field>
                       <Field label="Employment" error={profileFieldErrors.employmentType}>
-                        <select
-                          value={profileForm.employmentType}
-                          onChange={(e) => handleProfileField("employmentType", e.target.value)}
-                          className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.employmentType ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
-                        >
-                          <option value="">Select Employment</option>
-                          {employmentOptions.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {formatEmploymentLabel(opt)}
-                            </option>
-                          ))}
-                        </select>
+                        <EmploymentDropdown
+                          value={normalizeEmploymentType(profileForm.employmentType)}
+                          options={EMPLOYMENT_OPTIONS}
+                          error={profileFieldErrors.employmentType}
+                          onChange={(nextValue) => handleProfileField("employmentType", normalizeEmploymentType(nextValue))}
+                        />
                       </Field>
                       <Field label="Annual Income" error={profileFieldErrors.annualIncome}>
                         <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className={`w-full rounded-xl border bg-slate-50 p-3 text-sm outline-none transition-colors ${profileFieldErrors.annualIncome ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`} />
@@ -649,7 +686,7 @@ export default function UserDashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InfoBox label="Legal Name" value={profile?.fullName} />
                       <InfoBox label="Contact" value={profile?.phone} />
-                      <InfoBox label="Employment" value={formatEmploymentLabel(profile?.employmentType || "")} />
+                      <InfoBox label="Employment" value={getEmploymentLabel(profile?.employmentType || "")} />
                       <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
                       <InfoBox label="Address" value={profile?.address} />
                       <InfoBox label="CIBIL Score" value={profile?.creditScore} />
@@ -938,18 +975,14 @@ export default function UserDashboard() {
               <motion.div key="repayments" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
                   <h3 className="text-xl font-bold text-slate-900 mb-6">Payment Schedule</h3>
-                  <div className="mb-8 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50 p-3">
-                    <select
+                  <div className="mb-8 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50 p-4 shadow-sm">
+                    <p className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Select Loan</p>
+                    <LoanDropdown
                       value={activeLoanId}
-                      onChange={(e) => setActiveLoanId(e.target.value)}
+                      loans={activeLoans}
+                      onChange={setActiveLoanId}
                       disabled={!activeLoans.length}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 focus:border-emerald-500 outline-none transition-colors disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      <option value="">Select active loan...</option>
-                      {activeLoans.map((l) => (
-                        <option key={l.id} value={l.id}>{l.loanProductName}</option>
-                      ))}
-                    </select>
+                    />
                     {!activeLoans.length && (
                       <p className="mt-2 text-xs font-semibold text-slate-500">
                         No active loans available for payment.
@@ -1015,6 +1048,35 @@ export default function UserDashboard() {
                         <p className="mt-2 text-xs font-semibold text-rose-600">
                           Custom amount cannot exceed {money(maxAdvanceAmount)} (next 4 EMIs cap).
                         </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!!activeLoanId && (
+                    <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
+                        Loan Documents
+                      </p>
+                      {loanDocuments.length ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {loanDocuments.map((doc) => (
+                            <button
+                              key={doc.id}
+                              onClick={() => handleFileDownload(doc.id, doc.fileName || "document.pdf")}
+                              className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
+                            >
+                              <span className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                <FileText size={14} />
+                                {doc.label}
+                              </span>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700">
+                                View
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs font-semibold text-slate-500">No documents uploaded for this loan.</p>
                       )}
                     </div>
                   )}
@@ -1133,6 +1195,132 @@ function Field({ label, children, error }) {
       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">{label}</label>
       {children}
       {error ? <p className="text-xs font-semibold text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
+function EmploymentDropdown({ value, options, onChange, error }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const activeLabel = options.find((opt) => opt.value === value)?.label || "Select Employment";
+
+  useEffect(() => {
+    const onPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, []);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`w-full rounded-2xl border bg-gradient-to-r from-slate-50 to-emerald-50/30 px-4 py-3 text-left text-sm font-semibold text-slate-700 outline-none transition-colors ${
+          error ? "border-rose-400" : "border-slate-300 hover:border-emerald-400"
+        }`}
+      >
+        <span>{activeLabel}</span>
+        <ChevronDown
+          size={16}
+          className={`absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open ? (
+        <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
+          <button
+            type="button"
+            onClick={() => {
+              onChange("");
+              setOpen(false);
+            }}
+            className="w-full px-4 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50"
+          >
+            Select Employment
+          </button>
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                onChange(opt.value);
+                setOpen(false);
+              }}
+              className={`w-full px-4 py-3 text-left text-sm font-semibold transition-colors ${
+                value === opt.value
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LoanDropdown({ value, loans, onChange, disabled }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selectedLoan = loans.find((loan) => loan.id === value) || null;
+  const activeLabel = selectedLoan ? loanDropdownLabel(selectedLoan) : "Select active loan...";
+
+  useEffect(() => {
+    const onPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, []);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-700 outline-none transition-all hover:border-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+      >
+        <span>{activeLabel}</span>
+        <ChevronDown
+          size={16}
+          className={`absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && !disabled ? (
+        <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
+          <button
+            type="button"
+            onClick={() => {
+              onChange("");
+              setOpen(false);
+            }}
+            className="w-full px-4 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50"
+          >
+            Select active loan...
+          </button>
+          {loans.map((loan) => (
+            <button
+              key={loan.id}
+              type="button"
+              onClick={() => {
+                onChange(loan.id);
+                setOpen(false);
+              }}
+              className={`w-full px-4 py-3 text-left text-sm font-semibold transition-colors ${
+                value === loan.id
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {loanDropdownLabel(loan)}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

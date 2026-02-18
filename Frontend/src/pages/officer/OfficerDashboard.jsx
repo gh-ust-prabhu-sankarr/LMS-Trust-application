@@ -3,6 +3,7 @@ import { AnimatePresence } from "framer-motion";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, customerApi, kycApi, loanApi, unwrap, userApi, fileApi } from "../../api/domainApi.js";
 import { getFriendlyError } from "../../utils/errorMessage.js";
+import { getDocumentLabelFromFileName } from "../../utils/documentLabel.js";
 import { usePopup } from "../../components/ui/PopupProvider.jsx";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { 
@@ -60,6 +61,13 @@ const sortByNewest = (a, b) => {
   return String(b?.id || "").localeCompare(String(a?.id || ""));
 };
 
+const formatLoanDocumentLabel = (applicationLabel, fileName, fallback = "Loan Document") => {
+  const fromApplication = String(applicationLabel || "").trim();
+  const generic = /^loan supporting document$/i.test(fromApplication) || /^doc(ument)?\s*\d*$/i.test(fromApplication);
+  if (fromApplication && !generic) return fromApplication;
+  return getDocumentLabelFromFileName(fileName, fallback);
+};
+
 export default function OfficerDashboard() {
   const { user } = useAuth();
   const { showPopup } = usePopup();
@@ -82,7 +90,9 @@ export default function OfficerDashboard() {
   const [loanActionSuccess, setLoanActionSuccess] = useState("");
   const [approvedAmount, setApprovedAmount] = useState("");
   const [approvalComments, setApprovalComments] = useState("");
-  const [rejectionReason, setRejectionReason] = useState("");
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectReasonError, setRejectReasonError] = useState("");
   const [loanDocs, setLoanDocs] = useState([]);
   const [loanDocsLoading, setLoanDocsLoading] = useState(false);
   const [transactions, setTransactions] = useState([]);
@@ -196,7 +206,9 @@ export default function OfficerDashboard() {
     setLoanActionSuccess("");
     setApprovedAmount(String(loan?.requestedAmount || ""));
     setApprovalComments("");
-    setRejectionReason("");
+    setRejectModalOpen(false);
+    setRejectReason("");
+    setRejectReasonError("");
   };
 
   useEffect(() => {
@@ -233,10 +245,6 @@ export default function OfficerDashboard() {
     }
   };
 
-  const moveLoanToReview = () => withLoanAction(async () => {
-    await loanApi.moveToReview(selectedLoan.id);
-  });
-
   const isAlreadyInReviewTransition = (err) => {
     const msg = String(err?.response?.data?.message || err?.message || "").toLowerCase();
     return msg.includes("invalid state transition") || msg.includes("under_review");
@@ -263,12 +271,34 @@ export default function OfficerDashboard() {
     });
   });
 
-  const rejectLoan = () => withLoanAction(async () => {
-    const reason = rejectionReason.trim();
-    if (!reason) throw new Error("Enter rejection reason");
+  const rejectLoan = (reason) => withLoanAction(async () => {
     await ensureUnderReview(selectedLoan.id, selectedLoan.status);
     await loanApi.reject(selectedLoan.id, reason);
   });
+
+  const openRejectModal = () => {
+    setRejectReason("");
+    setRejectReasonError("");
+    setRejectModalOpen(true);
+  };
+
+  const closeRejectModal = () => {
+    if (actionBusy) return;
+    setRejectModalOpen(false);
+    setRejectReasonError("");
+  };
+
+  const confirmRejectLoan = async () => {
+    const reason = rejectReason.trim();
+    if (!reason) {
+      setRejectReasonError("Reason is required.");
+      return;
+    }
+    setRejectReasonError("");
+    await rejectLoan(reason);
+    setRejectModalOpen(false);
+    setRejectReason("");
+  };
 
   const parseAuditAmount = (details) => {
     const text = String(details || "");
@@ -806,18 +836,6 @@ export default function OfficerDashboard() {
                           <p className="text-sm font-semibold text-emerald-700">{loanActionSuccess}</p>
                         )}
 
-                        {selectedLoan.status === "SUBMITTED" && (
-                          <div className="flex flex-col gap-3">
-                            <button
-                              disabled={actionBusy}
-                              onClick={moveLoanToReview}
-                              className="w-full py-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-slate-800 hover:bg-emerald-800 transition-all disabled:opacity-60"
-                            >
-                              {actionBusy ? "Processing..." : "Move To Review"}
-                            </button>
-                          </div>
-                        )}
-
                         {["SUBMITTED", "UNDER_REVIEW"].includes(selectedLoan.status) && (
                           <div className="space-y-3">
                             <input
@@ -839,21 +857,14 @@ export default function OfficerDashboard() {
                               onClick={approveLoan}
                               className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl border border-slate-800 hover:bg-emerald-800 transition-all disabled:opacity-60"
                             >
-                              {actionBusy ? "Processing..." : (selectedLoan.status === "SUBMITTED" ? "Move + Approve Loan" : "Approve Loan")}
+                              {actionBusy ? "Processing..." : "Approve Loan"}
                             </button>
-
-                            <input
-                              value={rejectionReason}
-                              onChange={(e) => setRejectionReason(e.target.value)}
-                              placeholder="Rejection reason"
-                              className="w-full rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm"
-                            />
                             <button
                               disabled={actionBusy}
-                              onClick={rejectLoan}
+                              onClick={openRejectModal}
                               className="w-full py-4 bg-white text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-rose-200 hover:bg-rose-50 transition-all disabled:opacity-60"
                             >
-                              {actionBusy ? "Processing..." : (selectedLoan.status === "SUBMITTED" ? "Move + Reject Loan" : "Reject Loan")}
+                              {actionBusy ? "Processing..." : "Reject Loan"}
                             </button>
                           </div>
                         )}
@@ -875,10 +886,10 @@ export default function OfficerDashboard() {
                             Loading documents...
                           </div>
                         ) : loanDocs.length ? (
-                          loanDocs.map((doc) => (
+                          loanDocs.map((doc, idx) => (
                             <DocumentAction
                               key={doc.id}
-                              label={doc.displayName || doc.fileName || "Loan Document"}
+                              label={formatLoanDocumentLabel(selectedLoan?.documents?.[idx] || doc.displayName, doc.fileName, "Loan Document")}
                               fileId={doc.id}
                               fileName={doc.fileName || "document.pdf"}
                               onError={showPopup}
@@ -891,6 +902,57 @@ export default function OfficerDashboard() {
                         )}
                     </div>
                 </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedLoan && rejectModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[130] flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500 mb-2">Reject Loan</p>
+              <h3 className="text-xl font-serif text-slate-900 mb-2">Provide Rejection Reason</h3>
+              <p className="text-sm text-slate-500 mb-5">
+                This reason will be sent with the rejection response for loan ID {selectedLoan.id}.
+              </p>
+
+              <textarea
+                value={rejectReason}
+                onChange={(e) => {
+                  setRejectReason(e.target.value);
+                  if (rejectReasonError && e.target.value.trim()) setRejectReasonError("");
+                }}
+                placeholder="Enter reason"
+                rows={4}
+                className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none transition-colors ${
+                  rejectReasonError
+                    ? "border-rose-400 ring-2 ring-rose-100"
+                    : "border-slate-300 focus:border-rose-400"
+                }`}
+              />
+              {rejectReasonError ? (
+                <p className="mt-2 text-xs font-semibold text-rose-600">{rejectReasonError}</p>
+              ) : null}
+
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={closeRejectModal}
+                  className="rounded-xl border border-slate-300 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={confirmRejectLoan}
+                  className="rounded-xl border border-rose-300 bg-rose-50 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-100 disabled:opacity-60"
+                >
+                  {actionBusy ? "Processing..." : "Confirm Reject"}
+                </button>
+              </div>
             </div>
           </div>
         )}

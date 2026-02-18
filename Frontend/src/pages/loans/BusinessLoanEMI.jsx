@@ -249,7 +249,7 @@ const BusinessLoanEMI = () => {
         {/* FOOTER */}
         <footer className="py-12 text-center border-t border-slate-200">
           <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.4em]">
-            &copy; 2026 LMS Trust Global Banking System • ISO 27001 Certified
+            &copy; 2026 LMS Trust Global Banking • ISO 27001 Certified
           </p>
         </footer>
       </div>
