@@ -72,54 +72,17 @@ const txStatusMeta = (tx) => {
   return { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200" };
 };
 
-const EMPLOYMENT_TYPE_OPTIONS = [
-  "Salaried",
-  "Self-Employed",
-  "Business",
-  "Student",
-  
-];
-const ANNUAL_INCOME_MIN = 300000;
-const ANNUAL_INCOME_MAX = 20000000;
-const PHONE_REGEX = /^[6-9][0-9]{9}$/;
-
-const pickFirstNonEmpty = (...values) => {
-  for (const value of values) { 
-    const text = String(value ?? "").trim();
-    if (text) return text;
-  }
-  return "";
+const isPendingStatus = (tx) => {
+  const rawStatus =
+    tx?.txStatus ||
+    tx?.status ||
+    tx?.paymentStatus ||
+    tx?.transactionStatus ||
+    tx?.stripeStatus ||
+    "";
+  const s = String(rawStatus || "").toUpperCase();
+  return s === "PENDING" || s === "PROCESSING" || s === "";
 };
-
-const fallbackFullNameFromUser = (user) => {
-  const direct = pickFirstNonEmpty(user?.fullName, user?.name, user?.username);
-  if (direct) return direct;
-  const email = pickFirstNonEmpty(user?.email);
-  if (!email.includes("@")) return "";
-  return email.split("@")[0].replace(/[._-]+/g, " ").trim();
-};
-
-const fallbackPhoneFromUser = (user) =>
-  pickFirstNonEmpty(user?.phone, user?.phoneNumber, user?.mobile, user?.mobileNumber, user?.contactNumber);
-
-const toProfileForm = (profile, user, prev = null) => ({
-  fullName: pickFirstNonEmpty(profile?.fullName, prev?.fullName, fallbackFullNameFromUser(user)),
-  phone: pickFirstNonEmpty(profile?.phone, prev?.phone, fallbackPhoneFromUser(user)),
-  panNumber: pickFirstNonEmpty(profile?.panNumber, prev?.panNumber),
-  address: pickFirstNonEmpty(profile?.address, prev?.address),
-  employmentType: pickFirstNonEmpty(profile?.employmentType, prev?.employmentType),
-  annualIncome:
-    profile?.monthlyIncome != null
-      ? annualFromMonthly(profile?.monthlyIncome)
-      : pickFirstNonEmpty(prev?.annualIncome),
-});
-
-const toKycForm = (kyc, profile, user, prev = null) => ({
-  fullName: pickFirstNonEmpty(kyc?.fullName, profile?.fullName, prev?.fullName, fallbackFullNameFromUser(user)),
-  dob: kyc?.dob ? String(kyc.dob).slice(0, 10) : pickFirstNonEmpty(prev?.dob),
-  panNumber: pickFirstNonEmpty(kyc?.panNumber, profile?.panNumber, prev?.panNumber),
-  aadhaarNumber: pickFirstNonEmpty(kyc?.aadhaarNumber, prev?.aadhaarNumber),
-});
 
 export default function UserDashboard() {
   const { user } = useAuth();
@@ -173,35 +136,22 @@ export default function UserDashboard() {
   const loadBase = async () => {
     setLoading(true);
     try {
-      const [pRes, lRes, kRes] = await Promise.allSettled([
-        customerApi.getMyProfile(),
-        loanApi.getMyLoans(),
-        kycApi.getMyKyc(),
-      ]);
-
-      let loadedProfile = null;
-      if (pRes.status === "fulfilled") {
-        loadedProfile = pRes.value?.data?.data ?? pRes.value?.data ?? null;
-        setProfile(loadedProfile);
-      }
-
-      if (lRes.status === "fulfilled") {
-        setMyLoans(lRes.value?.data?.data ?? lRes.value?.data ?? []);
-      }
-
-      if (kRes.status === "fulfilled") {
-        const kycData = kRes.value?.data?.data ?? kRes.value?.data ?? null;
-        if (kycData) setMyKyc(kycData);
-      }
-
-      setProfileForm((prev) => toProfileForm(loadedProfile, user, prev));
-      if (!loadedProfile && lRes.status !== "fulfilled" && kRes.status !== "fulfilled") {
-        setError("Failed to synchronize workspace.");
-      }
-    } catch (e) {
-      setError(getFriendlyError(e, "Failed to synchronize workspace."));
-      setProfileForm((prev) => toProfileForm(null, user, prev));
-    }
+      const [pRes, lRes] = await Promise.all([customerApi.getMyProfile(), loanApi.getMyLoans()]);
+      const p = pRes.data;
+      setProfile(p);
+      setProfileForm({
+        fullName: p?.fullName || "",
+        phone: p?.phone || "",
+        panNumber: p?.panNumber || "",
+        address: p?.address || "",
+        employmentType: p?.employmentType || "",
+        annualIncome: annualFromMonthly(p?.monthlyIncome),
+      });
+      const loans = lRes.data || [];
+      setMyLoans(loans);
+      const kRes = await kycApi.getMyKyc().catch(() => null);
+      if (kRes?.data) setMyKyc(kRes.data);
+    } catch (e) { setError("Failed to synchronize workspace."); }
     finally { setLoading(false); }
   };
 
@@ -261,23 +211,62 @@ export default function UserDashboard() {
     loadMyTransactions();
   }, [activeTab, myLoans]);
 
+  // Auto-fail pending transactions after 20s (client-side display only)
   useEffect(() => {
-    setKycForm((prev) => toKycForm(myKyc, profile, user, prev));
-  }, [myKyc, profile, user]);
+    const timers = [];
+    myTransactions.forEach((tx) => {
+      if (!isPendingStatus(tx)) return;
+      const ref = tx?.txRef || tx?.id || tx?.transactionId || Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        setMyTransactions((prev) =>
+          prev.map((item) => {
+            const same =
+              (item?.txRef && item.txRef === ref) ||
+              (item?.id && item.id === ref) ||
+              (item?.transactionId && item.transactionId === ref);
+            if (same && isPendingStatus(item)) {
+              return { ...item, txStatus: "FAILED" };
+            }
+            return item;
+          })
+        );
+      }, 20000);
+      timers.push(timer);
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [myTransactions]);
 
   useEffect(() => {
-    setProfileForm((prev) => ({
-      ...prev,
-      panNumber: pickFirstNonEmpty(prev?.panNumber, profile?.panNumber, myKyc?.panNumber),
-    }));
-  }, [profile?.panNumber, myKyc?.panNumber]);
+    if (!myKyc) {
+      setKycForm({
+        fullName: profile?.fullName || "",
+        dob: "",
+        panNumber: profile?.panNumber || "",
+        aadhaarNumber: "",
+      });
+      return;
+    }
+    setKycForm({
+      fullName: myKyc?.fullName || "",
+      dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
+      panNumber: myKyc?.panNumber || "",
+      aadhaarNumber: myKyc?.aadhaarNumber || "",
+    });
+  }, [myKyc, profile]);
 
   const handleProfileField = (key, value) => {
     setProfileForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const resetProfileEdit = () => {
-    setProfileForm((prev) => toProfileForm(profile, user, prev));
+    setProfileForm({
+      fullName: profile?.fullName || "",
+      phone: profile?.phone || "",
+      panNumber: profile?.panNumber || "",
+      address: profile?.address || "",
+      employmentType: profile?.employmentType || "",
+      annualIncome: annualFromMonthly(profile?.monthlyIncome),
+    });
     setProfileError("");
     setProfileSuccess("");
     setEditing(false);
@@ -290,34 +279,14 @@ export default function UserDashboard() {
     const payload = {
       fullName: profileForm.fullName.trim(),
       phone: profileForm.phone.trim(),
+      panNumber: profileForm.panNumber.trim().toUpperCase(),
       address: profileForm.address.trim(),
       employmentType: profileForm.employmentType.trim(),
       monthlyIncome: monthlyFromAnnual(profileForm.annualIncome),
     };
-    const annualIncome = Number(profileForm.annualIncome);
 
-    if (!payload.fullName) {
-      setProfileError("Legal name is required.");
-      return;
-    }
-    if (!PHONE_REGEX.test(payload.phone)) {
-      setProfileError("Contact must be a valid 10-digit mobile number.");
-      return;
-    }
-    if (!payload.employmentType) {
-      setProfileError("Employment type is required.");
-      return;
-    }
-    if (!Number.isFinite(annualIncome) || annualIncome < ANNUAL_INCOME_MIN || annualIncome > ANNUAL_INCOME_MAX) {
-      setProfileError(`Annual income must be between ${ANNUAL_INCOME_MIN.toLocaleString("en-IN")} and ${ANNUAL_INCOME_MAX.toLocaleString("en-IN")}.`);
-      return;
-    }
-    if (!payload.address) {
-      setProfileError("Address is required.");
-      return;
-    }
-    if (!Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
-      setProfileError("Annual income must be a valid positive amount.");
+    if (!payload.fullName || !payload.phone || !payload.panNumber || !payload.address || !payload.employmentType || !Number.isFinite(payload.monthlyIncome) || payload.monthlyIncome <= 0) {
+      setProfileError("Fill all profile fields with valid values.");
       return;
     }
 
@@ -449,7 +418,14 @@ export default function UserDashboard() {
     setKycSuccess("");
     setPanFile(null);
     setAadhaarFile(null);
-    setKycForm((prev) => toKycForm(myKyc, profile, user, prev));
+    if (myKyc) {
+      setKycForm({
+        fullName: myKyc?.fullName || "",
+        dob: myKyc?.dob ? String(myKyc.dob).slice(0, 10) : "",
+        panNumber: myKyc?.panNumber || "",
+        aadhaarNumber: myKyc?.aadhaarNumber || "",
+      });
+    }
   };
 
   const submitKyc = async () => {
@@ -575,23 +551,14 @@ export default function UserDashboard() {
                       <Field label="Contact">
                         <input value={profileForm.phone} onChange={(e) => handleProfileField("phone", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
-  
+                      <Field label="Pan Number">
+                        <input value={profileForm.panNumber} onChange={(e) => handleProfileField("panNumber", e.target.value.toUpperCase())} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                      </Field>
                       <Field label="Employment">
-                        <select
-                          value={profileForm.employmentType}
-                          onChange={(e) => handleProfileField("employmentType", e.target.value)}
-                          className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors"
-                        >
-                          <option value="">Select employment type</option>
-                          {EMPLOYMENT_TYPE_OPTIONS.map((type) => (
-                            <option key={type} value={type}>
-                              {type}
-                            </option>
-                          ))}
-                        </select>
+                        <input value={profileForm.employmentType} onChange={(e) => handleProfileField("employmentType", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
                       <Field label="Annual Income">
-                        <input type="number" min={ANNUAL_INCOME_MIN} max={ANNUAL_INCOME_MAX} value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
+                        <input type="number" min="1" value={profileForm.annualIncome} onChange={(e) => handleProfileField("annualIncome", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
                       </Field>
                       <Field label="Address">
                         <input value={profileForm.address} onChange={(e) => handleProfileField("address", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm focus:border-emerald-500 outline-none transition-colors" />
@@ -600,17 +567,11 @@ export default function UserDashboard() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <InfoBox
-                        label="Legal Name"
-                        value={pickFirstNonEmpty(profile?.fullName, profileForm?.fullName, fallbackFullNameFromUser(user))}
-                      />
-                      <InfoBox label="Contact" value={pickFirstNonEmpty(profile?.phone, profileForm?.phone, fallbackPhoneFromUser(user))} />
-                     
+                      <InfoBox label="Legal Name" value={profile?.fullName} />
+                      <InfoBox label="Contact" value={profile?.phone} />
+                      <InfoBox label="Pan Number" value={maskPanNumber(profile?.panNumber)} />
                       <InfoBox label="Employment" value={profile?.employmentType} />
-                      <InfoBox
-                        label="Annual Income"
-                        value={Number(profile?.monthlyIncome) > 0 ? money(annualFromMonthly(profile?.monthlyIncome)) : ""}
-                      />
+                      <InfoBox label="Annual Income" value={money(annualFromMonthly(profile?.monthlyIncome))} />
                       <InfoBox label="Address" value={profile?.address} />
                       <InfoBox label="CIBIL Score" value={profile?.creditScore} />
                     </div>
@@ -754,41 +715,37 @@ export default function UserDashboard() {
             {activeTab === "loans" && (
               <motion.div key="loans" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
-                  {myLoans.length === 0 ? (
-                    <div className="p-10 text-center text-sm text-slate-500">No loans applied yet.</div>
-                  ) : (
-                    <table className="w-full text-left">
-                      <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          <th className="p-6">Loan Facility</th>
-                          <th className="p-6">Principal</th>
-                          <th className="p-6">Status</th>
-                          <th className="p-6 text-right">Action</th>
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        <th className="p-6">Loan Facility</th>
+                        <th className="p-6">Principal</th>
+                        <th className="p-6">Status</th>
+                        <th className="p-6 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {myLoans.map(l => (
+                        <tr key={l.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
+                          <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
+                          <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
+                          <td className="p-6 text-right">
+                            {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
+                              <button
+                                onClick={() => openAgreementModal(l)}
+                                className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
+                              >
+                                Accept Agreement
+                              </button>
+                            ) : (
+                              <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
+                            )}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {myLoans.map(l => (
-                          <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="p-6 font-bold text-slate-900">{l.loanProductName}</td>
-                            <td className="p-6 text-sm">{money(l.requestedAmount)}</td>
-                            <td className="p-6"><span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${loanStatusClass(l.status)}`}>{l.status}</span></td>
-                            <td className="p-6 text-right">
-                              {String(l?.status || "").toUpperCase() === "APPROVED" && !l?.agreementAccepted ? (
-                                <button
-                                  onClick={() => openAgreementModal(l)}
-                                  className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
-                                >
-                                  Accept Agreement
-                                </button>
-                              ) : (
-                                <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </motion.div>
             )}

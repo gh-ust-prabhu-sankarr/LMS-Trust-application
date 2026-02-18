@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
 import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
-import { parseApplicationFields, parseCommaSeparated, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
+import { parseApplicationFields, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
 import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid, ScrollText } from "lucide-react";
 
 const initialProductForm = {
@@ -43,7 +43,7 @@ export default function AdminDashboard() {
   const [txPage, setTxPage] = useState(1);
   const [txSearch, setTxSearch] = useState("");
   const [auditLogs, setAuditLogs] = useState([]);
-  const [auditFilters, setAuditFilters] = useState({ userId: "", entityType: "", entityId: "", limit: 50 });
+  const [auditFilters, setAuditFilters] = useState({ userId: "", entityType: "", limit: 50 });
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
   const [auditPage, setAuditPage] = useState(1);
@@ -99,7 +99,7 @@ export default function AdminDashboard() {
           id: `${customer?.id || "u"}-${a?.id || a?.timestamp || Math.random()}`,
           amount: parseAuditAmount(a?.details),
           details: a?.details || "-",
-          transactionRef: a?.entityId || "-",
+          transactionRef: "-",
           timestamp: a?.timestamp || null,
         }));
 
@@ -125,7 +125,6 @@ export default function AdminDashboard() {
     const cleanParams = {
       userId: params.userId || undefined,
       entityType: params.entityType || undefined,
-      entityId: params.entityId || undefined,
       limit: Number(params.limit) || 50,
     };
 
@@ -259,6 +258,12 @@ export default function AdminDashboard() {
         minCreditScore: parseInt(productForm.minCreditScore, 10),
       };
 
+      const splitLines = (text = "") =>
+        text
+          .split(/\r?\n/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+
       const createRes = await productApi.create(payload);
       const created = unwrap(createRes) || {};
       if (created?.id) {
@@ -269,9 +274,9 @@ export default function AdminDashboard() {
           badgeText: productForm.badgeText.trim(),
           ctaText: productForm.ctaText.trim(),
           imageUrl: productForm.imageUrl.trim(),
-          documents: parseCommaSeparated(productForm.documents),
-          requiredDocuments: parseCommaSeparated(productForm.requiredDocuments),
-          processSteps: parseCommaSeparated(productForm.processSteps),
+          documents: splitLines(productForm.documents),
+          requiredDocuments: splitLines(productForm.requiredDocuments),
+          processSteps: splitLines(productForm.processSteps),
           applicationFields: parseApplicationFields(productForm.applicationFields),
         });
       }
@@ -443,15 +448,6 @@ export default function AdminDashboard() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Entity ID</label>
-                <input
-                  value={auditFilters.entityId}
-                  onChange={(e) => setAuditFilters((p) => ({ ...p, entityId: e.target.value }))}
-                  placeholder="optional entity reference"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-              <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">Limit</label>
                 <input
                   type="number"
@@ -472,7 +468,7 @@ export default function AdminDashboard() {
                     Apply Filters
                   </button>
                   <button
-                    onClick={() => loadAuditLogs({ userId: "", entityType: "", entityId: "", limit: 50 })}
+                    onClick={() => loadAuditLogs({ userId: "", entityType: "", limit: 50 })}
                     disabled={auditLoading}
                     className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all disabled:opacity-60"
                   >
@@ -513,7 +509,6 @@ export default function AdminDashboard() {
                             <td className="px-6 py-4 text-xs font-semibold text-slate-700">{log.action || "-"}</td>
                             <td className="px-6 py-4 text-xs text-slate-600">
                               <div className="font-semibold text-slate-800">{log.entityType || "-"}</div>
-                              <div className="text-[10px] text-slate-400">ID: {log.entityId || "N/A"}</div>
                             </td>
                             <td className="px-6 py-4 text-xs text-slate-600 max-w-[280px]">{log.details || "-"}</td>
                           </tr>
@@ -764,14 +759,30 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                <Field label="Documents (comma separated)" placeholder="PAN, Address Proof, Bank Statement, Income Proof" value={productForm.documents} onChange={(v) => setProductForm((p) => ({ ...p, documents: v }))} />
                 <Field
-                  label="Required Documents (for application)"
-                  placeholder="PAN, Address Proof, Bank Statement"
+                  label="Documents"
+                  placeholder={"PAN\nAddress Proof\nBank Statement\nIncome Proof"}
+                  value={productForm.documents}
+                  onChange={(v) => setProductForm((p) => ({ ...p, documents: v }))}
+                  multiline
+                  rows={4}
+                />
+                <Field
+                  label="Required Documents"
+                  placeholder={"PAN\nAddress Proof\nBank Statement"}
                   value={productForm.requiredDocuments}
                   onChange={(v) => setProductForm((p) => ({ ...p, requiredDocuments: v }))}
+                  multiline
+                  rows={3}
                 />
-                <Field label="Process Steps (comma separated)" placeholder="Calculate, Apply, Verify, Disburse" value={productForm.processSteps} onChange={(v) => setProductForm((p) => ({ ...p, processSteps: v }))} />
+                <Field
+                  label="Process Steps"
+                  placeholder={"Calculate\nApply\nVerify\nDisburse"}
+                  value={productForm.processSteps}
+                  onChange={(v) => setProductForm((p) => ({ ...p, processSteps: v }))}
+                  multiline
+                  rows={3}
+                />
                 <Field
                   label="Application Fields"
                   placeholder="Business Name:text:required, GST Number:text:required, Annual Turnover:number:required"
@@ -799,17 +810,27 @@ function TabButton({ active, onClick, icon, label }) {
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = "text" }) {
+function Field({ label, value, onChange, placeholder, type = "text", multiline = false, rows = 3 }) {
   return (
     <div>
       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
-      />
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={rows}
+          className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+        />
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+        />
+      )}
     </div>
   );
 }

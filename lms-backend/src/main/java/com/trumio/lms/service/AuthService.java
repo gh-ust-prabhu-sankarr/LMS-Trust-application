@@ -48,6 +48,15 @@ public class AuthService {
         return new JwtResponse(token, user.getUsername(), user.getEmail(), user.getRole().name());
     }
 
+    public ApiResponse<String> logout() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        auditService.log(user.getId(), "LOGOUT", "USER", user.getId(), "User logged out");
+        return ApiResponse.success("Logged out successfully");
+    }
+
     public ApiResponse<String> signup(SignupRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new BusinessException(ErrorCode.USER_ALREADY_EXISTS, "Username already exists");

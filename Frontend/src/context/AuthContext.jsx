@@ -96,12 +96,19 @@ export function AuthProvider({ children }) {
     return res.data;
   };
 
-  const logout = () => {
-    removeToken();
-    localStorage.removeItem(ROLE_KEY);
-    setTokenState(null);
-    setRole(null);
-    setUser(null);
+  const logout = async () => {
+    try {
+      await authApi.logout();
+    } catch (err) {
+      // Even if audit call fails, clear client auth state to avoid trapping user.
+      console.error("Logout request failed", err);
+    } finally {
+      removeToken();
+      localStorage.removeItem(ROLE_KEY);
+      setTokenState(null);
+      setRole(null);
+      setUser(null);
+    }
   };
 
   const requestOtp = async ({ email }) => {
