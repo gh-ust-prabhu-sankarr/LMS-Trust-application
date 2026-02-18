@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/navbar/Navbar";
 import Hero from "../components/hero/Hero";
@@ -9,20 +9,8 @@ import { useAuth } from "../context/AuthContext.jsx";
   
 const LandingPage = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, role, user } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
-  const effectiveRole = role || user?.role || "";
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    if (effectiveRole === "ADMIN") {
-      navigate("/admin", { replace: true });
-      return;
-    }
-    if (effectiveRole === "CREDIT_OFFICER" || effectiveRole === "LOAN_OFFICER") {
-      navigate("/officer", { replace: true });
-    }
-  }, [isAuthenticated, effectiveRole, navigate]);
 
   const handleProtectedAction = () => {
     if (!isAuthenticated) {

@@ -65,7 +65,7 @@ export default function Login() {
         throw new Error("Use the dedicated Admin/Officer login page.");
       }
 
-      navigate("/app", { replace: true });
+      navigate("/", { replace: true });
 
     } catch (err) {
       setServerError(getFriendlyError(err, "Login failed. Please try again."));

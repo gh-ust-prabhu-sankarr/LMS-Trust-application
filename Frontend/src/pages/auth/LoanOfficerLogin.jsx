@@ -56,7 +56,7 @@ export default function LoanOfficerLogin() {
 
       if (out?.role !== "CREDIT_OFFICER") throw new Error("Not authorized for Officer portal");
 
-      navigate("/officer", { replace: true });
+      navigate("/", { replace: true });
     } catch (err) {
       setServerError(getFriendlyError(err, "Login failed. Please try again."));
     } finally {

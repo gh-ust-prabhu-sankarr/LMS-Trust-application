@@ -123,6 +123,8 @@ const isPendingStatus = (tx) => {
 export default function UserDashboard() {
   const { user } = useAuth();
   const { showPopup } = usePopup();
+  const registeredName = String(user?.username || "").trim();
+  const registeredPhone = String(user?.phone || "").trim();
   
   // --- UI & DATA STATE ---
   const [activeTab, setActiveTab] = useState("profile"); 
@@ -177,8 +179,8 @@ export default function UserDashboard() {
       const p = pRes.data;
       setProfile(p);
       setProfileForm({
-        fullName: p?.fullName || "",
-        phone: p?.phone || "",
+        fullName: p?.fullName || registeredName || "",
+        phone: p?.phone || registeredPhone || "",
         address: p?.address || "",
         employmentType: normalizeEmploymentType(p?.employmentType),
         annualIncome: annualFromMonthly(p?.monthlyIncome),
@@ -307,8 +309,8 @@ export default function UserDashboard() {
 
   const resetProfileEdit = () => {
     setProfileForm({
-      fullName: profile?.fullName || "",
-      phone: profile?.phone || "",
+      fullName: profile?.fullName || registeredName || "",
+      phone: profile?.phone || registeredPhone || "",
       address: profile?.address || "",
       employmentType: normalizeEmploymentType(profile?.employmentType),
       annualIncome: annualFromMonthly(profile?.monthlyIncome),
@@ -353,6 +355,15 @@ export default function UserDashboard() {
 
     return errors;
   };
+
+  useEffect(() => {
+    if (!profile) return;
+    setProfileForm((prev) => ({
+      ...prev,
+      fullName: prev.fullName || profile?.fullName || registeredName || "",
+      phone: prev.phone || profile?.phone || registeredPhone || "",
+    }));
+  }, [profile, registeredName, registeredPhone]);
 
   const saveProfile = async () => {
     setProfileError("");
