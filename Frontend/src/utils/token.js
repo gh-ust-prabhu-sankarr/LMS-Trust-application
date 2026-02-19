@@ -21,13 +21,19 @@ export const isTokenExpired = (token) => {
 };
 
 export const getToken = () => {
-  const token = localStorage.getItem(KEY);
+  const token = sessionStorage.getItem(KEY);
   if (!token) return null;
   if (isTokenExpired(token)) {
-    localStorage.removeItem(KEY);
+    sessionStorage.removeItem(KEY);
     return null;
   }
   return token;
 };
-export const setToken = (token) => localStorage.setItem(KEY, token);
-export const removeToken = () => localStorage.removeItem(KEY);
+export const setToken = (token) => {
+  sessionStorage.setItem(KEY, token);
+  localStorage.removeItem(KEY);
+};
+export const removeToken = () => {
+  sessionStorage.removeItem(KEY);
+  localStorage.removeItem(KEY);
+};

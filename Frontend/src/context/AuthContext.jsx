@@ -14,7 +14,7 @@ const normalizeRole = (value) => {
 
 export function AuthProvider({ children }) {
   const initialToken = getToken();
-  const storedRole = initialToken ? normalizeRole(localStorage.getItem(ROLE_KEY)) : null;
+  const storedRole = initialToken ? normalizeRole(sessionStorage.getItem(ROLE_KEY)) : null;
   const initialRole = getRoleFromToken(initialToken) || storedRole;
   const initialPayload = initialToken ? decodeToken(initialToken) : null;
 
@@ -36,12 +36,12 @@ export function AuthProvider({ children }) {
 
     const bootstrap = async () => {
       if (!token) {
-        localStorage.removeItem(ROLE_KEY);
+        sessionStorage.removeItem(ROLE_KEY);
         if (!cancelled) setAuthLoading(false);
         return;
       }
 
-      if (role) localStorage.setItem(ROLE_KEY, role);
+      if (role) sessionStorage.setItem(ROLE_KEY, role);
 
       try {
         const res = await authApi.me();
@@ -50,7 +50,7 @@ export function AuthProvider({ children }) {
         const resolvedRole = normalizeRole(apiUser?.role || apiUser?.authorities?.[0]);
         if (resolvedRole && resolvedRole !== role) {
           setRole(resolvedRole);
-          localStorage.setItem(ROLE_KEY, resolvedRole);
+          sessionStorage.setItem(ROLE_KEY, resolvedRole);
         }
         setUser((prev) => ({ ...(prev || {}), ...apiUser, role: resolvedRole || role || null }));
       } catch {
@@ -80,7 +80,7 @@ export function AuthProvider({ children }) {
     setTokenState(t);
     const r = normalizeRole(getRoleFromToken(t) || loginPayload?.role || null);
     setRole(r);
-    if (r) localStorage.setItem(ROLE_KEY, r);
+    if (r) sessionStorage.setItem(ROLE_KEY, r);
     const userPayload = loginPayload?.user || null;
     setUser(userPayload || {
       username: loginPayload?.username || normalizedIdentifier,
@@ -96,7 +96,7 @@ export function AuthProvider({ children }) {
       setUser((prev) => ({ ...(prev || {}), ...(apiUser || {}), role: resolvedRole }));
       if (resolvedRole) {
         setRole(resolvedRole);
-        localStorage.setItem(ROLE_KEY, resolvedRole);
+        sessionStorage.setItem(ROLE_KEY, resolvedRole);
       }
     } catch {
       // keep basic login payload as fallback
@@ -117,6 +117,7 @@ export function AuthProvider({ children }) {
       console.error("Logout request failed", err);
     } finally {
       removeToken();
+      sessionStorage.removeItem(ROLE_KEY);
       localStorage.removeItem(ROLE_KEY);
       setTokenState(null);
       setRole(null);
