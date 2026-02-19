@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { customerApi, fileApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
+import { customerApi, kycApi, loanApi, repaymentApi } from "../../api/domainApi.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useEmiSchedule } from "../../hooks/useEmiSchedule.jsx";
 import { getFriendlyError } from "../../utils/errorMessage.js";
@@ -161,7 +161,7 @@ export default function UserDashboard() {
   const [txLoading, setTxLoading] = useState(false);
   const [txError, setTxError] = useState("");
   const [activeLoanId, setActiveLoanId] = useState("");
-  const { schedule, docs, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
+  const { schedule, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
   const [bulkAmount, setBulkAmount] = useState("");
   const [bulkInstallmentCount, setBulkInstallmentCount] = useState(null);
   const [myKyc, setMyKyc] = useState(null);
@@ -507,14 +507,6 @@ export default function UserDashboard() {
     () => advanceEligibleInstallments.reduce((sum, ins) => sum + pendingAmount(ins), 0),
     [advanceEligibleInstallments]
   );
-  const loanDocuments = useMemo(
-    () =>
-      (docs || []).map((doc) => ({
-        ...doc,
-        label: doc?.displayName || doc?.fileName || "Loan Document",
-      })),
-    [docs]
-  );
 
   useEffect(() => {
     if (!activeLoanId || !isScheduleFullyPaid) return;
@@ -536,10 +528,6 @@ export default function UserDashboard() {
     if (!exists) setActiveLoanId("");
   }, [activeLoanId, activeLoans]);
 
-  const handleFileDownload = (id, name) =>
-    fileApi
-      .download(id, name)
-      .catch((e) => showPopup(getFriendlyError(e, "Download failed"), { type: "error" }));
   const handleKycField = (key, value) => setKycForm((prev) => ({ ...prev, [key]: value }));
   const PAN_RX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
   const AADHAAR_RX = /^[0-9]{12}$/;
@@ -1334,35 +1322,6 @@ export default function UserDashboard() {
                         <p className="mt-2 text-xs font-semibold text-rose-600">
                           Custom amount cannot exceed {money(maxAdvanceAmount)} (next 4 EMIs cap).
                         </p>
-                      )}
-                    </div>
-                  )}
-
-                  {!!activeLoanId && (
-                    <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
-                        Loan Documents
-                      </p>
-                      {loanDocuments.length ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {loanDocuments.map((doc) => (
-                            <button
-                              key={doc.id}
-                              onClick={() => handleFileDownload(doc.id, doc.fileName || "document.pdf")}
-                              className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
-                            >
-                              <span className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                                <FileText size={14} />
-                                {doc.label}
-                              </span>
-                              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700">
-                                View
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs font-semibold text-slate-500">No documents uploaded for this loan.</p>
                       )}
                     </div>
                   )}
