@@ -11,6 +11,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class LoanBankDetailsRequest {
 
+    private String beneficiaryType;
+
     @NotBlank(message = "Account holder name is required")
     private String accountHolderName;
 
@@ -27,4 +29,6 @@ public class LoanBankDetailsRequest {
 
     @NotBlank(message = "Branch name is required")
     private String branchName;
+
+    private String institutionName;
 }

@@ -65,6 +65,8 @@ const loanDropdownLabel = (loan) => {
   const amount = money(loan?.requestedAmount);
   return `${name} - ${amount}`;
 };
+const isEducationLoan = (loan) =>
+  String(loan?.loanProductName || "").toLowerCase().includes("education");
 const normalizeName = (value = "") =>
   String(value || "")
     .trim()
@@ -169,6 +171,8 @@ export default function UserDashboard() {
   const [agreementError, setAgreementError] = useState("");
   const [bankDetailsLoan, setBankDetailsLoan] = useState(null);
   const [bankDetailsForm, setBankDetailsForm] = useState({
+    beneficiaryType: "SELF",
+    institutionName: "",
     accountHolderName: "",
     bankName: "",
     accountNumber: "",
@@ -547,7 +551,10 @@ export default function UserDashboard() {
   };
 
   const seedBankDetailsForm = (loan) => {
+    const eduLoan = isEducationLoan(loan);
     setBankDetailsForm({
+      beneficiaryType: loan?.bankBeneficiaryType || (eduLoan ? "INSTITUTION" : "SELF"),
+      institutionName: loan?.institutionName || "",
       accountHolderName: loan?.bankAccountHolderName || profile?.fullName || user?.username || "",
       bankName: loan?.bankName || "",
       accountNumber: loan?.bankAccountNumber || "",
@@ -623,6 +630,10 @@ export default function UserDashboard() {
 
   const validateBankDetails = (payload) => {
     const errors = {};
+    if (!payload.beneficiaryType) errors.beneficiaryType = "Beneficiary type is required.";
+    if (payload.beneficiaryType === "INSTITUTION" && !payload.institutionName.trim()) {
+      errors.institutionName = "Institution name is required.";
+    }
     if (!payload.accountHolderName.trim()) errors.accountHolderName = "Account holder name is required.";
     if (!payload.bankName.trim()) errors.bankName = "Bank name is required.";
     if (!/^[0-9]{9,18}$/.test(payload.accountNumber)) errors.accountNumber = "Account number must be 9-18 digits.";
@@ -637,6 +648,8 @@ export default function UserDashboard() {
     setBankDetailsFieldErrors({});
 
     const payload = {
+      beneficiaryType: isEducationLoan(bankDetailsLoan) ? "INSTITUTION" : bankDetailsForm.beneficiaryType,
+      institutionName: bankDetailsForm.institutionName.trim(),
       accountHolderName: bankDetailsForm.accountHolderName.trim(),
       bankName: bankDetailsForm.bankName.trim(),
       accountNumber: bankDetailsForm.accountNumber.trim(),
@@ -1046,6 +1059,10 @@ export default function UserDashboard() {
                                   <span className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
                                     Awaiting Disbursement
                                   </span>
+                                ) : normalizeBankStatus(l?.bankDetailsStatus) === "PENDING" ? (
+                                  <span className="inline-flex rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
+                                    Submitted For Verification
+                                  </span>
                                 ) : (
                                   <button
                                     onClick={() => openBankDetailsModal(l)}
@@ -1118,6 +1135,8 @@ export default function UserDashboard() {
                                 <td className="px-6 py-4 text-right">
                                   {bankStatus === "APPROVED" ? (
                                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Verified by Admin</span>
+                                  ) : bankStatus === "PENDING" ? (
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-700">Submitted For Verification</span>
                                   ) : (
                                     <button
                                       onClick={() => openBankDetailsModal(loan)}
@@ -1419,8 +1438,31 @@ export default function UserDashboard() {
             <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               Loan: <span className="font-semibold">{bankDetailsLoan?.loanProductName || "-"}</span>
             </div>
+            <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Beneficiary Type" error={bankDetailsFieldErrors.beneficiaryType}>
+                <select
+                  value={bankDetailsForm.beneficiaryType}
+                  onChange={(e) => handleBankField("beneficiaryType", e.target.value)}
+                  disabled={isEducationLoan(bankDetailsLoan)}
+                  className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none ${bankDetailsFieldErrors.beneficiaryType ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"} disabled:bg-slate-100 disabled:text-slate-500`}
+                >
+                  <option value="SELF">Self</option>
+                  <option value="INSTITUTION">Institution</option>
+                </select>
+              </Field>
+              {bankDetailsForm.beneficiaryType === "INSTITUTION" && (
+                <Field label="Institution Name" error={bankDetailsFieldErrors.institutionName}>
+                  <input
+                    type="text"
+                    value={bankDetailsForm.institutionName}
+                    onChange={(e) => handleBankField("institutionName", e.target.value)}
+                    className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none ${bankDetailsFieldErrors.institutionName ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                  />
+                </Field>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Account Holder Name" error={bankDetailsFieldErrors.accountHolderName}>
+              <Field label={bankDetailsForm.beneficiaryType === "INSTITUTION" ? "Institution Account Holder Name" : "Account Holder Name"} error={bankDetailsFieldErrors.accountHolderName}>
                 <input
                   type="text"
                   value={bankDetailsForm.accountHolderName}

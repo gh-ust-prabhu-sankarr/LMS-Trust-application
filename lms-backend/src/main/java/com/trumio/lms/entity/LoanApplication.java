@@ -14,6 +14,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -64,6 +65,10 @@ public class LoanApplication {
 
     private String bankAccountHolderName;
 
+    private String bankBeneficiaryType;
+
+    private String institutionName;
+
     private String bankName;
 
     private String bankAccountNumber;
@@ -83,6 +88,8 @@ public class LoanApplication {
     private LocalDateTime bankDetailsReviewedAt;
 
     private List<String> documents;
+
+    private Map<String, String> applicationDetails;
 
     private LocalDateTime createdAt;
 

@@ -821,14 +821,40 @@ export default function OfficerDashboard() {
                             <ModalInfo label="Applicant" value={customerById[selectedLoan.customerId]?.fullName || "Unknown"} />
                             <ModalInfo label="Email" value={resolveCustomerEmail(selectedLoan.customerId)} />
                             <ModalInfo label="Requested Capital" value={money(selectedLoan.requestedAmount)} />
+                            <ModalInfo label="Approved Capital" value={selectedLoan?.approvedAmount ? money(selectedLoan.approvedAmount) : "-"} />
+                            <ModalInfo label="Tenure (Months)" value={selectedLoan?.tenure || "-"} />
+                            <ModalInfo
+                              label="Tenure (Years)"
+                              value={selectedLoan?.tenure ? (Number(selectedLoan.tenure) / 12).toFixed(1) : "-"}
+                            />
+                            <ModalInfo label="Interest Rate" value={selectedLoan?.interestRate ? `${selectedLoan.interestRate}%` : "-"} />
+                            <ModalInfo label="EMI" value={selectedLoan?.emi ? money(selectedLoan.emi) : "-"} />
                             <ModalInfo label="Monthly Yield" value={money(customerById[selectedLoan.customerId]?.monthlyIncome)} />
                             <ModalInfo label="CIBIL Index" value={customerById[selectedLoan.customerId]?.creditScore || "N/A"} />
+                            <ModalInfo label="Loan Status" value={selectedLoan?.status || "-"} />
+                            <ModalInfo label="Submitted At" value={selectedLoan?.submittedAt ? new Date(selectedLoan.submittedAt).toLocaleString("en-IN") : "-"} />
                         </div>
 
                         <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200">
                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Audit Memo</p>
                              <p className="text-sm text-slate-700 leading-relaxed font-medium italic">"System-generated risk assessment: Based on credit index and income statements, applicant shows stable repayment capacity."</p>
                         </div>
+
+                        {!!Object.keys(selectedLoan?.applicationDetails || {}).length && (
+                          <div className="p-6 bg-white rounded-[2rem] border border-slate-200">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">
+                              Application Details
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {Object.entries(selectedLoan.applicationDetails).map(([fieldLabel, fieldValue]) => (
+                                <div key={fieldLabel} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{fieldLabel}</p>
+                                  <p className="mt-1 text-sm font-semibold text-slate-800 break-words">{String(fieldValue || "-")}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         
                         {loanActionError && (
                           <p className="text-sm font-semibold text-rose-600">{loanActionError}</p>

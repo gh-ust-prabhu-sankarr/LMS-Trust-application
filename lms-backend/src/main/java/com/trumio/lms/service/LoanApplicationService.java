@@ -24,7 +24,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -133,6 +135,7 @@ public class LoanApplicationService {
                 .status(LoanStatus.DRAFT)
                 .agreementAccepted(false)
                 .bankDetailsStatus(BankDetailsStatus.NOT_SUBMITTED)
+                .applicationDetails(sanitizeApplicationDetails(request.getApplicationDetails()))
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -265,6 +268,18 @@ public class LoanApplicationService {
                 .toUpperCase();
     }
 
+    private Map<String, String> sanitizeApplicationDetails(Map<String, String> rawDetails) {
+        if (rawDetails == null || rawDetails.isEmpty()) return null;
+        Map<String, String> sanitized = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : rawDetails.entrySet()) {
+            String key = entry.getKey() == null ? "" : entry.getKey().trim();
+            String value = entry.getValue() == null ? "" : entry.getValue().trim();
+            if (key.isBlank() || value.isBlank()) continue;
+            sanitized.put(key, value);
+        }
+        return sanitized.isEmpty() ? null : sanitized;
+    }
+
     public ApiResponse<LoanApplication> submitBankDetails(String loanId, LoanBankDetailsRequest request) {
         Customer customer = customerService.getCurrentCustomer();
         LoanApplication loan = getLoanById(loanId);
@@ -280,8 +295,33 @@ public class LoanApplicationService {
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
                     "Please accept the loan agreement before submitting bank details");
         }
+        if (loan.getBankDetailsStatus() == BankDetailsStatus.PENDING || loan.getBankDetailsStatus() == BankDetailsStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Bank details already submitted and cannot be modified");
+        }
+
+        boolean isEducationLoan = String.valueOf(loan.getLoanProductName()).toLowerCase().contains("education");
+        String beneficiaryType = String.valueOf(request.getBeneficiaryType() == null ? "" : request.getBeneficiaryType())
+                .trim()
+                .toUpperCase();
+        if (beneficiaryType.isBlank()) {
+            beneficiaryType = isEducationLoan ? "INSTITUTION" : "SELF";
+        }
+        if (!"SELF".equals(beneficiaryType) && !"INSTITUTION".equals(beneficiaryType)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Beneficiary type must be SELF or INSTITUTION");
+        }
+        if (isEducationLoan && !"INSTITUTION".equals(beneficiaryType)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                    "Education loan bank details must be submitted for institution beneficiary");
+        }
+        String institutionName = request.getInstitutionName() == null ? "" : request.getInstitutionName().trim();
+        if ("INSTITUTION".equals(beneficiaryType) && institutionName.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Institution name is required for institution beneficiary");
+        }
 
         LocalDateTime now = LocalDateTime.now();
+        loan.setBankBeneficiaryType(beneficiaryType);
+        loan.setInstitutionName("INSTITUTION".equals(beneficiaryType) ? institutionName : null);
         loan.setBankAccountHolderName(request.getAccountHolderName().trim());
         loan.setBankName(request.getBankName().trim());
         loan.setBankAccountNumber(request.getAccountNumber().trim());

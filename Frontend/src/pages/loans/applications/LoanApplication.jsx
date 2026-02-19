@@ -243,6 +243,11 @@ export default function LoanApplication() {
         loanProductId: activeLoan.id,
         requestedAmount: numericAmount,
         tenure: Math.round(numericTenureYears * 12),
+        applicationDetails: Object.fromEntries(
+          applicationFields
+            .map((field) => [String(field?.label || field?.key || "").trim(), String(formData[field.key] || "").trim()])
+            .filter(([label, value]) => label && value)
+        ),
       };
 
       const createRes = await loanApi.create(payload);

@@ -1056,6 +1056,8 @@ export default function AdminDashboard() {
               <InfoRow label="Loan" value={selectedDisbursementLoan?.loanProductName || "-"} />
               <InfoRow label="Requested Capital" value={money(selectedDisbursementLoan?.requestedAmount)} />
               <InfoRow label="Agreement Status" value={selectedDisbursementLoan?.agreementAccepted ? "Accepted" : "Pending"} />
+              <InfoRow label="Beneficiary Type" value={String(selectedDisbursementLoan?.bankBeneficiaryType || "SELF").replaceAll("_", " ")} />
+              <InfoRow label="Institution Name" value={selectedDisbursementLoan?.institutionName || "-"} />
               <InfoRow label="Account Holder" value={selectedDisbursementLoan?.bankAccountHolderName || "-"} />
               <InfoRow label="Bank Name" value={selectedDisbursementLoan?.bankName || "-"} />
               <InfoRow label="Account Number" value={maskAccount(selectedDisbursementLoan?.bankAccountNumber)} />
