@@ -222,6 +222,15 @@ public class LoanApplicationService {
         if (signer.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Accepted name is required");
         }
+        String legalName = resolveLegalName(customer);
+        if (legalName.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                    "Legal name is missing in profile. Please update profile before signing agreement");
+        }
+        if (!normalizeName(signer).equals(normalizeName(legalName))) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                    "Signature name must exactly match your legal name");
+        }
 
         if (Boolean.TRUE.equals(loan.getAgreementAccepted())) {
             return ApiResponse.success("Agreement already accepted", loan);
@@ -237,6 +246,23 @@ public class LoanApplicationService {
                 saved.getId(), "Agreement accepted by: " + signer);
 
         return ApiResponse.success("Loan agreement accepted successfully", saved);
+    }
+
+    private String resolveLegalName(Customer customer) {
+        String legalName = customer.getFullName() == null ? "" : customer.getFullName().trim();
+        if (!legalName.isBlank()) return legalName;
+        if (customer.getUserId() == null || customer.getUserId().isBlank()) return "";
+        return userRepository.findById(customer.getUserId())
+                .map(User::getUsername)
+                .map(String::trim)
+                .orElse("");
+    }
+
+    private String normalizeName(String value) {
+        return String.valueOf(value == null ? "" : value)
+                .trim()
+                .replaceAll("\\s+", " ")
+                .toUpperCase();
     }
 
     public ApiResponse<LoanApplication> submitBankDetails(String loanId, LoanBankDetailsRequest request) {

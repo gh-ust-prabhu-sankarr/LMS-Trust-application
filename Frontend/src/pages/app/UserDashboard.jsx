@@ -65,6 +65,11 @@ const loanDropdownLabel = (loan) => {
   const amount = money(loan?.requestedAmount);
   return `${name} - ${amount}`;
 };
+const normalizeName = (value = "") =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
 const normalizeBankStatus = (value = "") => String(value || "NOT_SUBMITTED").toUpperCase();
 const maskAccount = (value = "") => {
   const text = String(value || "");
@@ -156,6 +161,7 @@ export default function UserDashboard() {
   const [activeLoanId, setActiveLoanId] = useState("");
   const { schedule, docs, actionBusy, actionError, payInstallment, payCustomAmount } = useEmiSchedule(activeLoanId);
   const [bulkAmount, setBulkAmount] = useState("");
+  const [bulkInstallmentCount, setBulkInstallmentCount] = useState(null);
   const [myKyc, setMyKyc] = useState(null);
   const [agreementLoan, setAgreementLoan] = useState(null);
   const [agreementName, setAgreementName] = useState("");
@@ -576,6 +582,15 @@ export default function UserDashboard() {
     const signer = agreementName.trim();
     if (!signer) {
       setAgreementError("Please type your full name to accept.");
+      return;
+    }
+    const legalName = String(profile?.fullName || profileForm?.fullName || registeredName || "").trim();
+    if (!legalName) {
+      setAgreementError("Legal name is missing in profile. Please update profile first.");
+      return;
+    }
+    if (normalizeName(signer) !== normalizeName(legalName)) {
+      setAgreementError("Signature name must match your legal name exactly.");
       return;
     }
 
@@ -1252,7 +1267,10 @@ export default function UserDashboard() {
                             <button
                               key={count}
                               type="button"
-                              onClick={() => setBulkAmount(String(suggestedAmount.toFixed(2)))}
+                              onClick={() => {
+                                setBulkAmount(String(suggestedAmount.toFixed(2)));
+                                setBulkInstallmentCount(count);
+                              }}
                               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-100"
                             >
                               {count} Month
@@ -1266,7 +1284,10 @@ export default function UserDashboard() {
                           min="1"
                           step="0.01"
                           value={bulkAmount}
-                          onChange={(e) => setBulkAmount(e.target.value)}
+                          onChange={(e) => {
+                            setBulkAmount(e.target.value);
+                            setBulkInstallmentCount(null);
+                          }}
                           placeholder="Enter amount (e.g. 120000)"
                           className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-emerald-500 outline-none transition-colors"
                         />
@@ -1276,8 +1297,11 @@ export default function UserDashboard() {
                             const amount = Number(bulkAmount || 0);
                             if (!Number.isFinite(amount) || amount <= 0) return;
                             if (amount > maxAdvanceAmount) return;
-                            const ok = await payCustomAmount(amount);
-                            if (ok) setBulkAmount("");
+                            const ok = await payCustomAmount(amount, bulkInstallmentCount);
+                            if (ok) {
+                              setBulkAmount("");
+                              setBulkInstallmentCount(null);
+                            }
                           }}
                           className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:border-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
                         >

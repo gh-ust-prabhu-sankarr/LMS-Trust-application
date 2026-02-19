@@ -21,7 +21,8 @@ public class StripePaymentService {
             String userId,
             String successUrl,
             String cancelUrl,
-            String paymentMode
+            String paymentMode,
+            Integer installmentCount
     ) throws StripeException {
 
         if (successUrl == null || !successUrl.contains("{CHECKOUT_SESSION_ID}")) {
@@ -31,7 +32,7 @@ public class StripePaymentService {
 
         long amountMinor = Math.round(amount * 100); // INR paise
 
-        SessionCreateParams params = SessionCreateParams.builder()
+        SessionCreateParams.Builder builder = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setSuccessUrl(successUrl)
                 .setCancelUrl(cancelUrl)
@@ -53,8 +54,13 @@ public class StripePaymentService {
                 )
                 .putMetadata("loanApplicationId", loanApplicationId)
                 .putMetadata("userId", userId)
-                .putMetadata("paymentMode", paymentMode == null || paymentMode.isBlank() ? "INSTALLMENT" : paymentMode)
-                .build();
+                .putMetadata("paymentMode", paymentMode == null || paymentMode.isBlank() ? "INSTALLMENT" : paymentMode);
+
+        if (installmentCount != null) {
+            builder.putMetadata("installmentCount", String.valueOf(installmentCount));
+        }
+
+        SessionCreateParams params = builder.build();
 
         return Session.create(params);
     }

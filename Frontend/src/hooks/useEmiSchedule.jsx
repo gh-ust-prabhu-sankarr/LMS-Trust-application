@@ -47,13 +47,14 @@ export function useEmiSchedule(activeLoanId) {
   }, [load]);
 
   const startStripeCheckout = useCallback(
-    async (amount, paymentMode = "INSTALLMENT") => {
+    async (amount, paymentMode = "INSTALLMENT", installmentCount = null) => {
       const successUrl = `${window.location.origin}/pay/success?session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${window.location.origin}/pay/cancel`;
       const res = await repaymentApi.createStripeCheckoutSession({
         loanApplicationId: activeLoanId,
         amount,
         paymentMode,
+        installmentCount,
         successUrl,
         cancelUrl,
       });
@@ -92,7 +93,7 @@ export function useEmiSchedule(activeLoanId) {
   );
 
   const payCustomAmount = useCallback(
-    async (amount) => {
+    async (amount, installmentCount = null) => {
       if (!activeLoanId) return false;
       const numericAmount = Number(amount || 0);
       if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
@@ -103,7 +104,7 @@ export function useEmiSchedule(activeLoanId) {
       setActionBusy(true);
       setActionError("");
       try {
-        return await startStripeCheckout(numericAmount, "CUSTOM");
+        return await startStripeCheckout(numericAmount, "CUSTOM", installmentCount);
       } catch (e) {
         setActionError(e?.response?.data?.message || e?.message || "Stripe payment failed");
         return false;

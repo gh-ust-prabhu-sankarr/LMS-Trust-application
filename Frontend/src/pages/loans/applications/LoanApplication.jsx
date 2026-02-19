@@ -320,7 +320,7 @@ export default function LoanApplication() {
 
           <header className="mb-10">
             <h1 className="text-3xl font-serif font-semibold text-slate-900 mb-2">{activeLoan?.name} Application</h1>
-            <p className="text-slate-500">Fields and documents are configured by admin for this loan type.</p>
+            <p className="text-slate-500">Complete all required fields and documents for this loan type.</p>
           </header>
 
           <form onSubmit={onSubmit} className="space-y-6">

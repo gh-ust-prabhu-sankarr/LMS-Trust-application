@@ -56,7 +56,7 @@ export default function AdminLogin() {
 
       if (out?.role !== "ADMIN") throw new Error("Not authorized for Admin portal");
 
-      navigate("/", { replace: true });
+      navigate("/admin", { replace: true });
     } catch (err) {
       setServerError(getFriendlyError(err, "Login failed. Please try again."));
     } finally {

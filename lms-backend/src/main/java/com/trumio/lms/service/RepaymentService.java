@@ -59,7 +59,7 @@ public class RepaymentService {
             throw new BusinessException(ErrorCode.REPAYMENT_FAILED, "Payment gateway error: " + e.getMessage());
         }
 
-        return processRepaymentForLoan(request.getLoanApplicationId(), amount, transactionId, userId, "INSTALLMENT");
+        return processRepaymentForLoan(request.getLoanApplicationId(), amount, transactionId, userId, "INSTALLMENT", null);
     }
 
     // ----------------------------
@@ -80,7 +80,8 @@ public class RepaymentService {
                 userId,
                 request.getSuccessUrl(),
                 request.getCancelUrl(),
-                request.getPaymentMode()
+                request.getPaymentMode(),
+                request.getInstallmentCount()
         );
 
         // Save pending repayment attempt
@@ -115,6 +116,9 @@ public class RepaymentService {
             if (current.getStatus() == RepaymentStatus.SUCCESS) {
                 return ApiResponse.success("Payment already processed", current);
             }
+            if (current.getStatus() == RepaymentStatus.PARTIAL) {
+                return ApiResponse.success("Payment already processed", current);
+            }
             if (current.getStatus() == RepaymentStatus.FAILED) {
                 return ApiResponse.success("Payment already marked as failed", current);
             }
@@ -133,6 +137,17 @@ public class RepaymentService {
         String loanApplicationId = session.getMetadata() == null ? null : session.getMetadata().get("loanApplicationId");
         String sessionUserId = session.getMetadata() == null ? null : session.getMetadata().get("userId");
         String paymentMode = session.getMetadata() == null ? "INSTALLMENT" : session.getMetadata().get("paymentMode");
+        Integer installmentLimit = null;
+        if (session.getMetadata() != null) {
+            String rawLimit = session.getMetadata().get("installmentCount");
+            if (rawLimit != null && !rawLimit.isBlank()) {
+                try {
+                    installmentLimit = Integer.parseInt(rawLimit);
+                } catch (NumberFormatException ignored) {
+                    installmentLimit = null;
+                }
+            }
+        }
 
         if (loanApplicationId == null || loanApplicationId.isBlank()) {
             throw new BusinessException(ErrorCode.REPAYMENT_FAILED, "Invalid Stripe session metadata: loanApplicationId missing");
@@ -147,7 +162,9 @@ public class RepaymentService {
             throw new BusinessException(ErrorCode.INVALID_AMOUNT, "Stripe returned invalid amount");
         }
 
-        ApiResponse<Repayment> response = processRepaymentForLoan(loanApplicationId, amount, sessionId, userId, paymentMode);
+        ApiResponse<Repayment> response = processRepaymentForLoan(
+                loanApplicationId, amount, sessionId, userId, paymentMode, installmentLimit
+        );
 
         if (response.getData() != null) {
             auditService.log(userId, "STRIPE_PAYMENT_CONFIRMED", "REPAYMENT",
@@ -160,7 +177,14 @@ public class RepaymentService {
     // ----------------------------
     // CORE REPAYMENT LOGIC
     // ----------------------------
-    private ApiResponse<Repayment> processRepaymentForLoan(String loanApplicationId, Double amount, String transactionId, String userId, String paymentMode) {
+    private ApiResponse<Repayment> processRepaymentForLoan(
+            String loanApplicationId,
+            Double amount,
+            String transactionId,
+            String userId,
+            String paymentMode,
+            Integer installmentLimit
+    ) {
         LoanContext context = loadAuthorizedLoanContext(loanApplicationId, userId);
 
         if (amount == null || amount <= 0) {
@@ -188,7 +212,7 @@ public class RepaymentService {
 
         Repayment saved = repaymentRepository.save(repayment);
 
-        updateEMISchedule(context.schedule(), context.loan(), appliedAmount, paymentMode);
+        updateEMISchedule(context.schedule(), context.loan(), appliedAmount, paymentMode, installmentLimit);
         closeLoanIfFullyPaid(context.schedule(), context.loan(), userId);
 
         adjustCreditScore(context.customer(), 5);
@@ -241,11 +265,18 @@ public class RepaymentService {
     /**
      * ✅ FIXED: null-safe paidAmount + correct pending math
      */
-    private void updateEMISchedule(EMISchedule schedule, LoanApplication loan, Double amount, String paymentMode) {
+    private void updateEMISchedule(
+            EMISchedule schedule,
+            LoanApplication loan,
+            Double amount,
+            String paymentMode,
+            Integer installmentLimit
+    ) {
         double remainingAmount = round2(amount == null ? 0.0 : amount);
         LocalDate paymentDate = LocalDate.now();
         boolean paidBeforeDueDate = false;
         boolean isCustomPayment = "CUSTOM".equalsIgnoreCase(String.valueOf(paymentMode));
+        int normalizedInstallmentLimit = installmentLimit == null ? Integer.MAX_VALUE : Math.max(1, installmentLimit);
         int fullyPaidInstallmentsThisTxn = 0;
         double earlyInterestBenefit = 0.0;
         double firstPendingOutstanding = schedule.getInstallments().stream()
@@ -258,6 +289,7 @@ public class RepaymentService {
         for (EMIInstallment installment : schedule.getInstallments()) {
             if (remainingAmount <= 0) break;
             if (installment.getStatus() == EMIStatus.PAID) continue;
+            if (isCustomPayment && fullyPaidInstallmentsThisTxn >= normalizedInstallmentLimit) break;
 
             double installmentTotal = round2(nvl(installment.getTotalAmount()));
             double alreadyPaid = round2(nvl(installment.getPaidAmount()));

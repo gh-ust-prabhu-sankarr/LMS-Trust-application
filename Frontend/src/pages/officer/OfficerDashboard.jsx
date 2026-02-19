@@ -309,7 +309,8 @@ export default function OfficerDashboard() {
   };
 
   const resolveCustomerEmail = useCallback(
-    (customerId) => {
+    (customerId, userId) => {
+      if (userId && userById[userId]?.email) return userById[userId].email;
       const customer = customerById[customerId];
       if (!customer) return "-";
       return userById[customer.userId]?.email || "-";
@@ -492,7 +493,7 @@ export default function OfficerDashboard() {
                               <p className="font-bold text-slate-900">{kyc.fullName || "Unknown"}</p>
                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">ID: {kyc.id}</p>
                             </td>
-                            <td className="p-6 text-xs text-slate-600">{resolveCustomerEmail(kyc.customerId)}</td>
+                            <td className="p-6 text-xs text-slate-600">{resolveCustomerEmail(kyc.customerId, kyc.userId)}</td>
                             <td className="p-6 text-sm font-bold text-slate-900">{kyc.dob || "N/A"}</td>
                             <td className="p-6">
                               <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${STATUS_TONE[kyc.status]}`}>
