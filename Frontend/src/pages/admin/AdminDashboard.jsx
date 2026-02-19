@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import PortalShell from "../../components/layout/PortalShell.jsx";
-import { adminApi, productApi, unwrap } from "../../api/domainApi.js";
+import { adminApi, customerApi, loanApi, productApi, unwrap } from "../../api/domainApi.js";
 import { parseApplicationFields, slugifyLoanName, upsertLoanPageMeta } from "../../utils/loanCatalog.js";
 import { getFriendlyError } from "../../utils/errorMessage.js";
 import { usePopup } from "../../components/ui/PopupProvider.jsx";
-import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid, ScrollText } from "lucide-react";
+import { Users, ShieldCheck, Search, ChevronLeft, ChevronRight, UserPlus, PackagePlus, LayoutGrid, ScrollText, Landmark } from "lucide-react";
 
 const initialProductForm = {
   name: "",
@@ -30,6 +30,18 @@ const initialOfficerForm = { username: "", email: "", password: "" };
 const initialOfficerErrors = {};
 const initialProductErrors = {};
 const hasAlphabet = (value = "") => /[A-Za-z]/.test(String(value));
+const bankStatusTone = (status) => {
+  const normalized = String(status || "NOT_SUBMITTED").toUpperCase();
+  if (normalized === "APPROVED") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (normalized === "PENDING") return "bg-amber-50 text-amber-700 border-amber-200";
+  if (normalized === "REJECTED") return "bg-rose-50 text-rose-700 border-rose-200";
+  return "bg-slate-100 text-slate-700 border-slate-200";
+};
+const maskAccount = (account) => {
+  const text = String(account || "");
+  if (text.length <= 4) return text || "-";
+  return `${"*".repeat(text.length - 4)}${text.slice(-4)}`;
+};
 
 export default function AdminDashboard() {
   const { showPopup } = usePopup();
@@ -54,6 +66,12 @@ export default function AdminDashboard() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
   const [auditPage, setAuditPage] = useState(1);
+  const [disbursementLoading, setDisbursementLoading] = useState(false);
+  const [disbursementError, setDisbursementError] = useState("");
+  const [approvedLoans, setApprovedLoans] = useState([]);
+  const [selectedDisbursementLoan, setSelectedDisbursementLoan] = useState(null);
+  const [decisionReason, setDecisionReason] = useState("");
+  const [disbursementActionBusy, setDisbursementActionBusy] = useState(false);
 
   const itemsPerPage = 4;
   const txItemsPerPage = 6;
@@ -181,6 +199,36 @@ export default function AdminDashboard() {
     }
   };
 
+  const loadApprovedLoansForDisbursement = async () => {
+    setDisbursementLoading(true);
+    setDisbursementError("");
+    try {
+      const res = await loanApi.getByStatus("APPROVED");
+      const loans = unwrap(res) || res?.data || [];
+      const customerResults = await Promise.allSettled(
+        loans.map((loan) => customerApi.getById(loan.customerId))
+      );
+      const customerNameById = {};
+      customerResults.forEach((result, idx) => {
+        if (result.status !== "fulfilled") return;
+        const loan = loans[idx];
+        const customer = unwrap(result.value) || result.value?.data || {};
+        customerNameById[loan.id] = customer?.fullName || "Unknown";
+      });
+      setApprovedLoans(
+        loans.map((loan) => ({
+          ...loan,
+          customerName: customerNameById[loan.id] || "Unknown",
+        }))
+      );
+    } catch (err) {
+      setDisbursementError(getFriendlyError(err, "Failed to load approved loans."));
+      setApprovedLoans([]);
+    } finally {
+      setDisbursementLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab !== "TRANSACTIONS") return;
     loadAllTransactions();
@@ -193,6 +241,11 @@ export default function AdminDashboard() {
     if (activeTab !== "AUDIT") return;
     loadAuditActionOptions();
     loadAuditLogs();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "DISBURSEMENTS") return;
+    loadApprovedLoansForDisbursement();
   }, [activeTab]);
 
   const filteredUsers = useMemo(
@@ -256,6 +309,71 @@ export default function AdminDashboard() {
       showPopup("User status updated successfully.", { type: "success" });
     } catch (err) {
       showPopup(getFriendlyError(err, "Action failed."), { type: "error" });
+    }
+  };
+
+  const openDisbursementModal = (loan) => {
+    setSelectedDisbursementLoan(loan);
+    setDecisionReason("");
+  };
+
+  const closeDisbursementModal = () => {
+    if (disbursementActionBusy) return;
+    setSelectedDisbursementLoan(null);
+    setDecisionReason("");
+  };
+
+  const refreshLoansAfterAction = async (preferredLoanId = null) => {
+    await loadApprovedLoansForDisbursement();
+    if (!preferredLoanId) {
+      setSelectedDisbursementLoan(null);
+      return;
+    }
+    try {
+      const loanRes = await loanApi.getById(preferredLoanId);
+      const loan = unwrap(loanRes) || loanRes?.data;
+      const customerRes = await customerApi.getById(loan.customerId);
+      const customer = unwrap(customerRes) || customerRes?.data || {};
+      setSelectedDisbursementLoan({ ...loan, customerName: customer?.fullName || "Unknown" });
+    } catch {
+      setSelectedDisbursementLoan(null);
+    }
+  };
+
+  const verifyBankDetails = async (status) => {
+    if (!selectedDisbursementLoan?.id) return;
+    if (status === "REJECTED" && !decisionReason.trim()) {
+      showPopup("Rejection reason is required.", { type: "error" });
+      return;
+    }
+
+    setDisbursementActionBusy(true);
+    try {
+      await loanApi.verifyBankDetails(selectedDisbursementLoan.id, {
+        status,
+        reason: decisionReason.trim() || null,
+      });
+      showPopup(`Bank details ${status.toLowerCase()} successfully.`, { type: "success" });
+      setDecisionReason("");
+      await refreshLoansAfterAction(selectedDisbursementLoan.id);
+    } catch (err) {
+      showPopup(getFriendlyError(err, "Bank details action failed."), { type: "error" });
+    } finally {
+      setDisbursementActionBusy(false);
+    }
+  };
+
+  const disburseLoan = async () => {
+    if (!selectedDisbursementLoan?.id) return;
+    setDisbursementActionBusy(true);
+    try {
+      await loanApi.disburse(selectedDisbursementLoan.id);
+      showPopup("Loan disbursed successfully.", { type: "success" });
+      await refreshLoansAfterAction();
+    } catch (err) {
+      showPopup(getFriendlyError(err, "Disbursement failed."), { type: "error" });
+    } finally {
+      setDisbursementActionBusy(false);
     }
   };
 
@@ -386,8 +504,9 @@ export default function AdminDashboard() {
 
   return (
     <PortalShell title="Admin Command Center" subtitle="Manage system access and loan instrument deployment.">
-      <div className="mb-10 flex space-x-1 rounded-2xl bg-slate-200/50 p-1.5 max-w-2xl mx-auto shadow-inner">
+      <div className="mb-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1 rounded-2xl bg-slate-200/50 p-1.5 max-w-6xl mx-auto shadow-inner">
         <TabButton active={activeTab === "DIRECTORY"} onClick={() => setActiveTab("DIRECTORY")} icon={<LayoutGrid size={16} />} label="User Registry" />
+        <TabButton active={activeTab === "DISBURSEMENTS"} onClick={() => setActiveTab("DISBURSEMENTS")} icon={<Landmark size={16} />} label="Disbursements" />
         <TabButton active={activeTab === "TRANSACTIONS"} onClick={() => setActiveTab("TRANSACTIONS")} icon={<Users size={16} />} label="Transactions" />
         <TabButton active={activeTab === "AUDIT"} onClick={() => setActiveTab("AUDIT")} icon={<ScrollText size={16} />} label="Audit Logs" />
         <TabButton active={activeTab === "OFFICER"} onClick={() => setActiveTab("OFFICER")} icon={<UserPlus size={16} />} label="Add Officer" />
@@ -480,6 +599,79 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </div>
+          </section>
+        )}
+
+        {activeTab === "DISBURSEMENTS" && (
+          <section className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                  <Landmark size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900">Loan Disbursements</h3>
+                  <p className="text-xs text-slate-500">Verify customer bank details and disburse approved loans.</p>
+                </div>
+              </div>
+              <button
+                onClick={loadApprovedLoansForDisbursement}
+                disabled={disbursementLoading}
+                className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+              >
+                {disbursementLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {disbursementError && (
+              <p className="px-6 pt-4 text-sm font-semibold text-rose-600">{disbursementError}</p>
+            )}
+
+            {disbursementLoading ? (
+              <div className="p-8 text-sm text-slate-500">Loading approved loans...</div>
+            ) : approvedLoans.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                    <tr>
+                      <th className="px-6 py-4">Applicant</th>
+                      <th className="px-6 py-4">Loan</th>
+                      <th className="px-6 py-4">Amount</th>
+                      <th className="px-6 py-4">Agreement</th>
+                      <th className="px-6 py-4">Bank Details</th>
+                      <th className="px-6 py-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {approvedLoans.map((loan) => (
+                      <tr key={loan.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4 text-sm font-semibold text-slate-800">{loan.customerName || "Unknown"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-700">{loan.loanProductName || "-"}</td>
+                        <td className="px-6 py-4 text-sm text-slate-700">{money(loan.requestedAmount)}</td>
+                        <td className="px-6 py-4 text-xs font-semibold text-slate-700">
+                          {loan?.agreementAccepted ? `Accepted by ${loan?.agreementAcceptedName || "-"}` : "Pending customer signature"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${bankStatusTone(loan?.bankDetailsStatus)}`}>
+                            {String(loan?.bankDetailsStatus || "NOT_SUBMITTED").replaceAll("_", " ")}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => openDisbursementModal(loan)}
+                            className="rounded-lg border border-emerald-200 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:border-emerald-300 hover:text-emerald-900"
+                          >
+                            Review
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-10 text-center text-sm text-slate-500">No approved loans available for disbursement.</div>
+            )}
           </section>
         )}
 
@@ -852,13 +1044,92 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {selectedDisbursementLoan && (
+        <div className="fixed inset-0 z-[120] flex items-start sm:items-center justify-center overflow-y-auto bg-slate-900/50 p-4">
+          <div className="my-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Loan Disbursement Review</h3>
+            <p className="text-sm text-slate-500 mb-6">Verify bank details, then disburse the loan amount.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+              <InfoRow label="Applicant" value={selectedDisbursementLoan?.customerName || "-"} />
+              <InfoRow label="Loan" value={selectedDisbursementLoan?.loanProductName || "-"} />
+              <InfoRow label="Requested Capital" value={money(selectedDisbursementLoan?.requestedAmount)} />
+              <InfoRow label="Agreement Status" value={selectedDisbursementLoan?.agreementAccepted ? "Accepted" : "Pending"} />
+              <InfoRow label="Account Holder" value={selectedDisbursementLoan?.bankAccountHolderName || "-"} />
+              <InfoRow label="Bank Name" value={selectedDisbursementLoan?.bankName || "-"} />
+              <InfoRow label="Account Number" value={maskAccount(selectedDisbursementLoan?.bankAccountNumber)} />
+              <InfoRow label="IFSC" value={selectedDisbursementLoan?.bankIfscCode || "-"} />
+              <InfoRow label="Branch" value={selectedDisbursementLoan?.bankBranchName || "-"} />
+              <InfoRow
+                label="Bank Details Status"
+                value={String(selectedDisbursementLoan?.bankDetailsStatus || "NOT_SUBMITTED").replaceAll("_", " ")}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1 block">
+                Reason (required for reject)
+              </label>
+              <textarea
+                rows={3}
+                value={decisionReason}
+                onChange={(e) => setDecisionReason(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                placeholder="Enter reason when rejecting bank details"
+              />
+            </div>
+
+            {selectedDisbursementLoan?.bankDetailsRejectionReason ? (
+              <p className="mb-4 text-xs font-semibold text-rose-600">
+                Last rejection: {selectedDisbursementLoan.bankDetailsRejectionReason}
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap justify-end gap-3">
+              <button
+                onClick={closeDisbursementModal}
+                disabled={disbursementActionBusy}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => verifyBankDetails("REJECTED")}
+                disabled={disbursementActionBusy}
+                className="rounded-xl border border-rose-300 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+              >
+                Reject Bank Details
+              </button>
+              <button
+                onClick={() => verifyBankDetails("APPROVED")}
+                disabled={disbursementActionBusy || !selectedDisbursementLoan?.agreementAccepted}
+                className="rounded-xl border border-emerald-300 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+              >
+                Approve Bank Details
+              </button>
+              <button
+                onClick={disburseLoan}
+                disabled={
+                  disbursementActionBusy ||
+                  !selectedDisbursementLoan?.agreementAccepted ||
+                  String(selectedDisbursementLoan?.bankDetailsStatus || "").toUpperCase() !== "APPROVED"
+                }
+                className="rounded-xl border border-slate-800 bg-slate-900 px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-emerald-700 hover:border-emerald-600 disabled:opacity-60"
+              >
+                Disburse Loan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }
 
 function TabButton({ active, onClick, icon, label }) {
   return (
-    <button onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? "bg-white text-emerald-700 shadow-md scale-105" : "text-slate-400 hover:text-slate-600"}`}>
+    <button onClick={onClick} className={`w-full flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${active ? "bg-white text-emerald-700 shadow-md scale-[1.02]" : "text-slate-400 hover:text-slate-600"}`}>
       {icon} {label}
     </button>
   );
@@ -886,6 +1157,15 @@ function Field({ label, value, onChange, placeholder, type = "text", multiline =
         />
       )}
       {error ? <p className="mt-1 text-xs font-semibold text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="text-sm font-semibold text-slate-800">{value || "-"}</p>
     </div>
   );
 }

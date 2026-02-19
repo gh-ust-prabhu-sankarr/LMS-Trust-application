@@ -65,6 +65,12 @@ const loanDropdownLabel = (loan) => {
   const amount = money(loan?.requestedAmount);
   return `${name} - ${amount}`;
 };
+const normalizeBankStatus = (value = "") => String(value || "NOT_SUBMITTED").toUpperCase();
+const maskAccount = (value = "") => {
+  const text = String(value || "");
+  if (text.length <= 4) return text || "-";
+  return `${"*".repeat(Math.max(0, text.length - 4))}${text.slice(-4)}`;
+};
 
 const KYC_META = {
   PENDING: { label: "PENDING", cls: "bg-amber-50 text-amber-800 border-amber-200", icon: <AlertCircle size={14}/> },
@@ -155,6 +161,17 @@ export default function UserDashboard() {
   const [agreementName, setAgreementName] = useState("");
   const [agreementBusy, setAgreementBusy] = useState(false);
   const [agreementError, setAgreementError] = useState("");
+  const [bankDetailsLoan, setBankDetailsLoan] = useState(null);
+  const [bankDetailsForm, setBankDetailsForm] = useState({
+    accountHolderName: "",
+    bankName: "",
+    accountNumber: "",
+    ifscCode: "",
+    branchName: "",
+  });
+  const [bankDetailsBusy, setBankDetailsBusy] = useState(false);
+  const [bankDetailsError, setBankDetailsError] = useState("");
+  const [bankDetailsFieldErrors, setBankDetailsFieldErrors] = useState({});
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -438,7 +455,18 @@ export default function UserDashboard() {
 
   const totalPages = Math.ceil((schedule?.installments?.length || 0) / pageSize);
   const activeLoans = useMemo(
-    () => myLoans.filter((loan) => String(loan?.status || "").toUpperCase() === "APPROVED"),
+    () =>
+      myLoans.filter((loan) =>
+        ["DISBURSED", "ACTIVE", "CLOSED"].includes(String(loan?.status || "").toUpperCase())
+      ),
+    [myLoans]
+  );
+  const bankDetailsEligibleLoans = useMemo(
+    () =>
+      myLoans.filter((loan) => {
+        const loanStatus = String(loan?.status || "").toUpperCase();
+        return ["APPROVED", "DISBURSED", "ACTIVE", "CLOSED"].includes(loanStatus) && !!loan?.agreementAccepted;
+      }),
     [myLoans]
   );
   const canAcceptAgreement = (loan) =>
@@ -512,6 +540,30 @@ export default function UserDashboard() {
     setAgreementError("");
   };
 
+  const seedBankDetailsForm = (loan) => {
+    setBankDetailsForm({
+      accountHolderName: loan?.bankAccountHolderName || profile?.fullName || user?.username || "",
+      bankName: loan?.bankName || "",
+      accountNumber: loan?.bankAccountNumber || "",
+      ifscCode: loan?.bankIfscCode || "",
+      branchName: loan?.bankBranchName || "",
+    });
+    setBankDetailsError("");
+    setBankDetailsFieldErrors({});
+  };
+
+  const openBankDetailsModal = (loan) => {
+    setBankDetailsLoan(loan);
+    seedBankDetailsForm(loan);
+  };
+
+  const closeBankDetailsModal = (force = false) => {
+    if (bankDetailsBusy && !force) return;
+    setBankDetailsLoan(null);
+    setBankDetailsError("");
+    setBankDetailsFieldErrors({});
+  };
+
   const closeAgreementModal = (force = false) => {
     if (agreementBusy && !force) return;
     setAgreementLoan(null);
@@ -532,12 +584,73 @@ export default function UserDashboard() {
     try {
       await loanApi.acceptAgreement(agreementLoan.id, { acceptedName: signer });
       const freshLoans = await loanApi.getMyLoans();
-      setMyLoans(freshLoans?.data || []);
+      const latest = freshLoans?.data || [];
+      setMyLoans(latest);
+      const acceptedLoan = latest.find((loan) => loan.id === agreementLoan.id);
       closeAgreementModal(true);
+      if (acceptedLoan) openBankDetailsModal(acceptedLoan);
     } catch (e) {
       setAgreementError(e?.response?.data?.message || e?.message || "Agreement acceptance failed.");
     } finally {
       setAgreementBusy(false);
+    }
+  };
+
+  const handleBankField = (field, value) => {
+    setBankDetailsForm((prev) => ({ ...prev, [field]: value }));
+    setBankDetailsFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const validateBankDetails = (payload) => {
+    const errors = {};
+    if (!payload.accountHolderName.trim()) errors.accountHolderName = "Account holder name is required.";
+    if (!payload.bankName.trim()) errors.bankName = "Bank name is required.";
+    if (!/^[0-9]{9,18}$/.test(payload.accountNumber)) errors.accountNumber = "Account number must be 9-18 digits.";
+    if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(payload.ifscCode)) errors.ifscCode = "Enter a valid IFSC code.";
+    if (!payload.branchName.trim()) errors.branchName = "Branch name is required.";
+    return errors;
+  };
+
+  const submitBankDetails = async () => {
+    if (!bankDetailsLoan?.id) return;
+    setBankDetailsError("");
+    setBankDetailsFieldErrors({});
+
+    const payload = {
+      accountHolderName: bankDetailsForm.accountHolderName.trim(),
+      bankName: bankDetailsForm.bankName.trim(),
+      accountNumber: bankDetailsForm.accountNumber.trim(),
+      ifscCode: bankDetailsForm.ifscCode.trim().toUpperCase(),
+      branchName: bankDetailsForm.branchName.trim(),
+    };
+    const errors = validateBankDetails(payload);
+    if (Object.keys(errors).length) {
+      setBankDetailsFieldErrors(errors);
+      const first = Object.values(errors)[0] || "Please fix highlighted fields.";
+      setBankDetailsError(first);
+      showPopup(first, { type: "error" });
+      return;
+    }
+
+    setBankDetailsBusy(true);
+    try {
+      await loanApi.submitBankDetails(bankDetailsLoan.id, payload);
+      const freshLoans = await loanApi.getMyLoans();
+      setMyLoans(freshLoans?.data || []);
+      closeBankDetailsModal(true);
+      setActiveTab("bankDetails");
+      showPopup("Bank details submitted for admin verification.", { type: "success" });
+    } catch (e) {
+      const message = getFriendlyError(e, "Failed to submit bank details.");
+      setBankDetailsError(message);
+      showPopup(message, { type: "error" });
+    } finally {
+      setBankDetailsBusy(false);
     }
   };
 
@@ -664,6 +777,7 @@ export default function UserDashboard() {
           <SidebarButton id="profile" label="Profile" icon={User} />
           <SidebarButton id="kyc" label="KYC Hub" icon={ShieldCheck} />
           <SidebarButton id="loans" label="My Loans" icon={Landmark} />
+          <SidebarButton id="bankDetails" label="Bank Details" icon={Landmark} />
           <SidebarButton id="transactions" label="Transactions" icon={FileText} />
           <SidebarButton id="repayments" label="Payments" icon={ReceiptIndianRupee} />
         </aside>
@@ -912,6 +1026,19 @@ export default function UserDashboard() {
                                     Accept Agreement
                                   </button>
                                 )
+                              ) : String(l?.status || "").toUpperCase() === "APPROVED" ? (
+                                normalizeBankStatus(l?.bankDetailsStatus) === "APPROVED" ? (
+                                  <span className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                                    Awaiting Disbursement
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => openBankDetailsModal(l)}
+                                    className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-emerald-200 hover:border-emerald-300 px-3 py-1 rounded-lg"
+                                  >
+                                    {normalizeBankStatus(l?.bankDetailsStatus) === "REJECTED" ? "Update Bank Details" : "Submit Bank Details"}
+                                  </button>
+                                )
                               ) : (
                                 <button onClick={() => { setActiveLoanId(l.id); setActiveTab("repayments"); }} className="text-emerald-700 font-black text-[10px] uppercase tracking-widest hover:text-emerald-900 transition-colors border border-transparent hover:border-emerald-100 px-3 py-1 rounded-lg">Details</button>
                               )}
@@ -931,7 +1058,76 @@ export default function UserDashboard() {
               </motion.div>
             )}
 
-            {/* 4. TRANSACTIONS */}
+            {/* 4. BANK DETAILS */}
+            {activeTab === "bankDetails" && (
+              <motion.div key="bank-details" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
+                <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
+                  <div className="p-6 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-900">Disbursement Bank Details</h3>
+                    <p className="text-xs text-slate-500">Submit and track bank account verification for approved loans.</p>
+                  </div>
+                  {bankDetailsEligibleLoans.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/50 text-[10px] uppercase tracking-widest text-slate-400 font-black border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4">Loan</th>
+                            <th className="px-6 py-4">Account</th>
+                            <th className="px-6 py-4">IFSC</th>
+                            <th className="px-6 py-4">Bank Status</th>
+                            <th className="px-6 py-4 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {bankDetailsEligibleLoans.map((loan) => {
+                            const bankStatus = normalizeBankStatus(loan?.bankDetailsStatus);
+                            const tone =
+                              bankStatus === "APPROVED"
+                                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                : bankStatus === "REJECTED"
+                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                  : bankStatus === "PENDING"
+                                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                                    : "bg-slate-100 text-slate-700 border-slate-200";
+                            return (
+                              <tr key={loan.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4 text-sm font-semibold text-slate-800">{loan.loanProductName || "Loan"}</td>
+                                <td className="px-6 py-4 text-xs text-slate-600">{maskAccount(loan?.bankAccountNumber)}</td>
+                                <td className="px-6 py-4 text-xs font-mono text-slate-600">{loan?.bankIfscCode || "-"}</td>
+                                <td className="px-6 py-4">
+                                  <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${tone}`}>{bankStatus.replaceAll("_", " ")}</span>
+                                  {bankStatus === "REJECTED" && loan?.bankDetailsRejectionReason ? (
+                                    <p className="mt-1 text-xs font-semibold text-rose-600">{loan.bankDetailsRejectionReason}</p>
+                                  ) : null}
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  {bankStatus === "APPROVED" ? (
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Verified by Admin</span>
+                                  ) : (
+                                    <button
+                                      onClick={() => openBankDetailsModal(loan)}
+                                      className="rounded-lg border border-emerald-200 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:border-emerald-300 hover:text-emerald-900"
+                                    >
+                                      {bankStatus === "REJECTED" ? "Update Details" : "Submit Details"}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-10 text-center text-sm text-slate-500">
+                      No loans available for bank details.
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* 5. TRANSACTIONS */}
             {activeTab === "transactions" && (
               <motion.div key="transactions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2rem] bg-white border border-slate-200 overflow-hidden shadow-xl shadow-slate-200/40">
@@ -1017,7 +1213,7 @@ export default function UserDashboard() {
               </motion.div>
             )}
 
-            {/* 5. REPAYMENTS */}
+            {/* 6. REPAYMENTS */}
             {activeTab === "repayments" && (
               <motion.div key="repayments" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
                 <div className="rounded-[2.5rem] bg-white border border-slate-200 p-8 shadow-xl shadow-slate-200/40">
@@ -1032,7 +1228,7 @@ export default function UserDashboard() {
                     />
                     {!activeLoans.length && (
                       <p className="mt-2 text-xs font-semibold text-slate-500">
-                        No active loans available for payment.
+                        EMI schedule will appear after admin disburses your approved loan.
                       </p>
                     )}
                   </div>
@@ -1142,7 +1338,13 @@ export default function UserDashboard() {
                           <div className="flex items-center gap-3">
                             <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${ins.status === 'PAID' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600 border-slate-300'}`}>{ins.status}</span>
                             {nextPayableInstallment && ins.installmentNumber === nextPayableInstallment.installmentNumber && (
-                              <button onClick={() => payInstallment(ins)} className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all">Pay EMI</button>
+                              <button
+                                disabled={actionBusy}
+                                onClick={() => payInstallment(ins)}
+                                className="bg-slate-900 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg border border-slate-800 hover:bg-emerald-700 hover:border-emerald-600 transition-all disabled:opacity-60"
+                              >
+                                {actionBusy ? "Processing..." : "Pay EMI"}
+                              </button>
                             )}
                           </div>
                         </div>
@@ -1181,6 +1383,84 @@ export default function UserDashboard() {
           </AnimatePresence>
         </main>
       </div>
+
+      {bankDetailsLoan && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-[2rem] border border-slate-200 bg-white p-8 shadow-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-700 mb-2">Bank Details</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-3">Disbursement Account Details</h3>
+            <p className="text-sm text-slate-600 mb-5">
+              Fill your bank details. Admin will verify these details and disburse the approved loan amount.
+            </p>
+            <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Loan: <span className="font-semibold">{bankDetailsLoan?.loanProductName || "-"}</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Account Holder Name" error={bankDetailsFieldErrors.accountHolderName}>
+                <input
+                  type="text"
+                  value={bankDetailsForm.accountHolderName}
+                  onChange={(e) => handleBankField("accountHolderName", e.target.value)}
+                  className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none ${bankDetailsFieldErrors.accountHolderName ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                />
+              </Field>
+              <Field label="Bank Name" error={bankDetailsFieldErrors.bankName}>
+                <input
+                  type="text"
+                  value={bankDetailsForm.bankName}
+                  onChange={(e) => handleBankField("bankName", e.target.value)}
+                  className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none ${bankDetailsFieldErrors.bankName ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                />
+              </Field>
+              <Field label="Account Number" error={bankDetailsFieldErrors.accountNumber}>
+                <input
+                  type="text"
+                  value={bankDetailsForm.accountNumber}
+                  onChange={(e) => handleBankField("accountNumber", e.target.value.replace(/[^0-9]/g, ""))}
+                  className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none ${bankDetailsFieldErrors.accountNumber ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                />
+              </Field>
+              <Field label="IFSC Code" error={bankDetailsFieldErrors.ifscCode}>
+                <input
+                  type="text"
+                  value={bankDetailsForm.ifscCode}
+                  onChange={(e) => handleBankField("ifscCode", e.target.value.toUpperCase())}
+                  className={`w-full rounded-xl border bg-white px-4 py-3 text-sm uppercase outline-none ${bankDetailsFieldErrors.ifscCode ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                />
+              </Field>
+              <div className="md:col-span-2">
+                <Field label="Branch Name" error={bankDetailsFieldErrors.branchName}>
+                  <input
+                    type="text"
+                    value={bankDetailsForm.branchName}
+                    onChange={(e) => handleBankField("branchName", e.target.value)}
+                    className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none ${bankDetailsFieldErrors.branchName ? "border-rose-400 focus:border-rose-500" : "border-slate-300 focus:border-emerald-500"}`}
+                  />
+                </Field>
+              </div>
+            </div>
+            {bankDetailsError && (
+              <p className="mt-3 text-sm font-semibold text-rose-600">{bankDetailsError}</p>
+            )}
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={closeBankDetailsModal}
+                disabled={bankDetailsBusy}
+                className="rounded-xl border border-slate-300 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitBankDetails}
+                disabled={bankDetailsBusy}
+                className="rounded-xl border border-slate-800 bg-slate-900 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-emerald-700 hover:border-emerald-600 disabled:opacity-60"
+              >
+                {bankDetailsBusy ? "Submitting..." : "Submit Bank Details"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {agreementLoan && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4">

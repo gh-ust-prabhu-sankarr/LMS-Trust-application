@@ -20,7 +20,8 @@ public class StripePaymentService {
             Double amount,
             String userId,
             String successUrl,
-            String cancelUrl
+            String cancelUrl,
+            String paymentMode
     ) throws StripeException {
 
         if (successUrl == null || !successUrl.contains("{CHECKOUT_SESSION_ID}")) {
@@ -52,6 +53,7 @@ public class StripePaymentService {
                 )
                 .putMetadata("loanApplicationId", loanApplicationId)
                 .putMetadata("userId", userId)
+                .putMetadata("paymentMode", paymentMode == null || paymentMode.isBlank() ? "INSTALLMENT" : paymentMode)
                 .build();
 
         return Session.create(params);

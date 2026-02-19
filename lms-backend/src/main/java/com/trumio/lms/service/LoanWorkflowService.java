@@ -13,6 +13,7 @@ package com.trumio.lms.service;
 //import com.loanapp.repository.LoanApplicationRepository;
 //import com.loanapp.repository.UserRepository;
 import com.trumio.lms.dto.ApiResponse;
+import com.trumio.lms.dto.BankDetailsVerificationRequest;
 import com.trumio.lms.dto.LoanApprovalRequest;
 import com.trumio.lms.entity.Customer;
 import com.trumio.lms.entity.Kyc;
@@ -20,6 +21,7 @@ import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.User;
 import com.trumio.lms.entity.enums.KYCStatus;
 import com.trumio.lms.entity.enums.LoanStatus;
+import com.trumio.lms.entity.enums.BankDetailsStatus;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
 import com.trumio.lms.exception.InvalidStateTransitionException;
@@ -78,9 +80,6 @@ public class LoanWorkflowService {
 
         LoanApplication saved = loanApplicationRepository.save(loan);
 
-        if (emiService.getScheduleByLoanId(saved.getId()).isEmpty()) {
-            emiService.generateSchedule(saved);
-        }
         auditService.log(getCurrentUserId(), "LOAN_APPROVED", "LOAN_APPLICATION",
                 loanId, "Loan approved: " + request.getComments());
 
@@ -140,6 +139,14 @@ public class LoanWorkflowService {
     public ApiResponse<LoanApplication> disburseLoan(String loanId) {
         LoanApplication loan = getLoan(loanId);
         validateTransition(loan.getStatus(), LoanStatus.DISBURSED);
+        if (!Boolean.TRUE.equals(loan.getAgreementAccepted())) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Loan agreement must be accepted before disbursement");
+        }
+        if (loan.getBankDetailsStatus() != BankDetailsStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Bank details must be approved by admin before disbursement");
+        }
 
         loan.setStatus(LoanStatus.DISBURSED);
         loan.setDisbursedAt(LocalDateTime.now());
@@ -148,7 +155,9 @@ public class LoanWorkflowService {
         LoanApplication saved = loanApplicationRepository.save(loan);
 
         // Generate EMI schedule
-        emiService.generateSchedule(saved);
+        if (emiService.getScheduleByLoanId(saved.getId()).isEmpty()) {
+            emiService.generateSchedule(saved);
+        }
 
         // Move to ACTIVE
         saved.setStatus(LoanStatus.ACTIVE);
@@ -158,6 +167,42 @@ public class LoanWorkflowService {
                 loanId, "Loan disbursed and activated");
 
         return ApiResponse.success("Loan disbursed successfully", saved);
+    }
+
+    public ApiResponse<LoanApplication> verifyBankDetails(String loanId, BankDetailsVerificationRequest request) {
+        LoanApplication loan = getLoan(loanId);
+        if (loan.getStatus() != LoanStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Bank details can be verified only for approved loans");
+        }
+        if (loan.getBankDetailsStatus() != BankDetailsStatus.PENDING
+                && loan.getBankDetailsStatus() != BankDetailsStatus.REJECTED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Bank details are not pending for verification");
+        }
+
+        String status = String.valueOf(request.getStatus()).trim().toUpperCase();
+        if (!"APPROVED".equals(status) && !"REJECTED".equals(status)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                    "Status must be APPROVED or REJECTED");
+        }
+        if ("REJECTED".equals(status) && (request.getReason() == null || request.getReason().trim().isBlank())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                    "Rejection reason is required");
+        }
+
+        String adminId = getCurrentUserId();
+        LocalDateTime now = LocalDateTime.now();
+        loan.setBankDetailsStatus("APPROVED".equals(status) ? BankDetailsStatus.APPROVED : BankDetailsStatus.REJECTED);
+        loan.setBankDetailsReviewedAt(now);
+        loan.setBankDetailsReviewedBy(adminId);
+        loan.setBankDetailsRejectionReason("REJECTED".equals(status) ? request.getReason().trim() : null);
+        loan.setUpdatedAt(now);
+
+        LoanApplication saved = loanApplicationRepository.save(loan);
+        auditService.log(adminId, "BANK_DETAILS_" + status, "LOAN_APPLICATION",
+                loanId, "Bank details " + status.toLowerCase());
+        return ApiResponse.success("Bank details " + status.toLowerCase() + " successfully", saved);
     }
 
     private void validateTransition(LoanStatus from, LoanStatus to) {

@@ -59,7 +59,7 @@ public class RepaymentService {
             throw new BusinessException(ErrorCode.REPAYMENT_FAILED, "Payment gateway error: " + e.getMessage());
         }
 
-        return processRepaymentForLoan(request.getLoanApplicationId(), amount, transactionId, userId);
+        return processRepaymentForLoan(request.getLoanApplicationId(), amount, transactionId, userId, "INSTALLMENT");
     }
 
     // ----------------------------
@@ -79,7 +79,8 @@ public class RepaymentService {
                 request.getAmount(),
                 userId,
                 request.getSuccessUrl(),
-                request.getCancelUrl()
+                request.getCancelUrl(),
+                request.getPaymentMode()
         );
 
         // Save pending repayment attempt
@@ -131,6 +132,7 @@ public class RepaymentService {
 
         String loanApplicationId = session.getMetadata() == null ? null : session.getMetadata().get("loanApplicationId");
         String sessionUserId = session.getMetadata() == null ? null : session.getMetadata().get("userId");
+        String paymentMode = session.getMetadata() == null ? "INSTALLMENT" : session.getMetadata().get("paymentMode");
 
         if (loanApplicationId == null || loanApplicationId.isBlank()) {
             throw new BusinessException(ErrorCode.REPAYMENT_FAILED, "Invalid Stripe session metadata: loanApplicationId missing");
@@ -145,7 +147,7 @@ public class RepaymentService {
             throw new BusinessException(ErrorCode.INVALID_AMOUNT, "Stripe returned invalid amount");
         }
 
-        ApiResponse<Repayment> response = processRepaymentForLoan(loanApplicationId, amount, sessionId, userId);
+        ApiResponse<Repayment> response = processRepaymentForLoan(loanApplicationId, amount, sessionId, userId, paymentMode);
 
         if (response.getData() != null) {
             auditService.log(userId, "STRIPE_PAYMENT_CONFIRMED", "REPAYMENT",
@@ -158,14 +160,19 @@ public class RepaymentService {
     // ----------------------------
     // CORE REPAYMENT LOGIC
     // ----------------------------
-    private ApiResponse<Repayment> processRepaymentForLoan(String loanApplicationId, Double amount, String transactionId, String userId) {
+    private ApiResponse<Repayment> processRepaymentForLoan(String loanApplicationId, Double amount, String transactionId, String userId, String paymentMode) {
         LoanContext context = loadAuthorizedLoanContext(loanApplicationId, userId);
 
         if (amount == null || amount <= 0) {
             throw new BusinessException(ErrorCode.INVALID_AMOUNT, "Amount must be positive");
         }
+        double pendingBeforePayment = calculatePendingAmount(context.schedule());
+        if (pendingBeforePayment <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION, "Loan is already fully paid");
+        }
+        double appliedAmount = round2(Math.min(amount, pendingBeforePayment));
 
-        boolean willBePartial = isPartialPayment(context.schedule(), amount);
+        boolean willBePartial = appliedAmount < pendingBeforePayment;
 
         Repayment repayment = repaymentRepository.findByTransactionId(transactionId).orElse(
                 Repayment.builder()
@@ -175,19 +182,22 @@ public class RepaymentService {
                         .build()
         );
 
-        repayment.setAmount(amount);
+        repayment.setAmount(appliedAmount);
         repayment.setPaymentDate(LocalDateTime.now());
         repayment.setStatus(willBePartial ? RepaymentStatus.PARTIAL : RepaymentStatus.SUCCESS);
 
         Repayment saved = repaymentRepository.save(repayment);
 
-        updateEMISchedule(context.schedule(), context.loan(), amount);
+        updateEMISchedule(context.schedule(), context.loan(), appliedAmount, paymentMode);
         closeLoanIfFullyPaid(context.schedule(), context.loan(), userId);
 
         adjustCreditScore(context.customer(), 5);
         customerRepository.save(context.customer());
 
-        auditService.log(userId, "REPAYMENT", "REPAYMENT", saved.getId(), "Repayment of " + amount);
+        String details = appliedAmount < amount
+                ? "Repayment of " + appliedAmount + " (requested " + amount + ", capped to outstanding)"
+                : "Repayment of " + appliedAmount;
+        auditService.log(userId, "REPAYMENT", "REPAYMENT", saved.getId(), details);
 
         return ApiResponse.success("Payment processed successfully", saved);
     }
@@ -205,13 +215,18 @@ public class RepaymentService {
     }
 
     private LoanContext loadAuthorizedLoanContext(String loanApplicationId, String userId) {
-        EMISchedule schedule = emiScheduleRepository.findByLoanApplicationId(loanApplicationId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.EMI_NOT_FOUND));
-
         LoanApplication loan = loanApplicationRepository.findById(loanApplicationId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.LOAN_NOT_FOUND));
 
         enrichLoanWithProductName(loan);
+        LoanStatus status = loan.getStatus();
+        if (status != LoanStatus.DISBURSED && status != LoanStatus.ACTIVE && status != LoanStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "EMI schedule is available only after loan disbursement");
+        }
+
+        EMISchedule schedule = emiScheduleRepository.findByLoanApplicationId(loanApplicationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.EMI_NOT_FOUND));
 
         Customer customer = customerRepository.findById(loan.getCustomerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_FOUND));
@@ -226,36 +241,60 @@ public class RepaymentService {
     /**
      * ✅ FIXED: null-safe paidAmount + correct pending math
      */
-    private void updateEMISchedule(EMISchedule schedule, LoanApplication loan, Double amount) {
-        double remainingAmount = amount == null ? 0.0 : amount;
+    private void updateEMISchedule(EMISchedule schedule, LoanApplication loan, Double amount, String paymentMode) {
+        double remainingAmount = round2(amount == null ? 0.0 : amount);
         LocalDate paymentDate = LocalDate.now();
         boolean paidBeforeDueDate = false;
+        boolean isCustomPayment = "CUSTOM".equalsIgnoreCase(String.valueOf(paymentMode));
+        int fullyPaidInstallmentsThisTxn = 0;
+        double earlyInterestBenefit = 0.0;
+        double firstPendingOutstanding = schedule.getInstallments().stream()
+                .filter(i -> i.getStatus() != EMIStatus.PAID)
+                .findFirst()
+                .map(i -> round2(Math.max(0.0, nvl(i.getTotalAmount()) - nvl(i.getPaidAmount()))))
+                .orElse(0.0);
+        boolean advancePayment = remainingAmount > firstPendingOutstanding + 0.01;
 
         for (EMIInstallment installment : schedule.getInstallments()) {
             if (remainingAmount <= 0) break;
             if (installment.getStatus() == EMIStatus.PAID) continue;
 
-            double alreadyPaid = nvl(installment.getPaidAmount());
-            double pending = installment.getTotalAmount() - alreadyPaid;
+            double installmentTotal = round2(nvl(installment.getTotalAmount()));
+            double alreadyPaid = round2(nvl(installment.getPaidAmount()));
+            double pending = round2(installmentTotal - alreadyPaid);
 
             if (pending <= 0) {
-                installment.setPaidAmount(installment.getTotalAmount());
+                installment.setPaidAmount(installmentTotal);
                 installment.setStatus(EMIStatus.PAID);
                 if (installment.getPaidDate() == null) installment.setPaidDate(paymentDate);
                 continue;
             }
 
-            if (remainingAmount >= pending) {
-                installment.setPaidAmount(installment.getTotalAmount());
+            if (remainingAmount + 0.0001 >= pending) {
+                installment.setPaidAmount(installmentTotal);
                 installment.setStatus(EMIStatus.PAID);
                 installment.setPaidDate(paymentDate);
-                remainingAmount -= pending;
+                fullyPaidInstallmentsThisTxn++;
+                if (isCustomPayment && installment.getDueDate() != null && installment.getDueDate().isAfter(paymentDate)) {
+                    earlyInterestBenefit = round2(earlyInterestBenefit + nvl(installment.getInterestAmount()));
+                }
+                remainingAmount = round2(remainingAmount - pending);
+                if (remainingAmount < 0.01) remainingAmount = 0.0;
                 if (installment.getDueDate() != null && paymentDate.isBefore(installment.getDueDate())) {
                     paidBeforeDueDate = true;
                 }
             } else {
-                installment.setPaidAmount(alreadyPaid + remainingAmount);
-                installment.setStatus(EMIStatus.PARTIAL);
+                double newPaidAmount = round2(alreadyPaid + remainingAmount);
+                installment.setPaidAmount(newPaidAmount);
+                boolean fullyPaidNow = newPaidAmount + 0.0001 >= installmentTotal;
+                installment.setStatus(fullyPaidNow ? EMIStatus.PAID : EMIStatus.PARTIAL);
+                if (fullyPaidNow) {
+                    installment.setPaidDate(paymentDate);
+                    fullyPaidInstallmentsThisTxn++;
+                    if (isCustomPayment && installment.getDueDate() != null && installment.getDueDate().isAfter(paymentDate)) {
+                        earlyInterestBenefit = round2(earlyInterestBenefit + nvl(installment.getInterestAmount()));
+                    }
+                }
                 if (installment.getDueDate() != null && paymentDate.isBefore(installment.getDueDate())) {
                     paidBeforeDueDate = true;
                 }
@@ -263,8 +302,9 @@ public class RepaymentService {
             }
         }
 
-        if (paidBeforeDueDate) {
-            recastRemainingSchedule(schedule, loan, paymentDate);
+        boolean customMultiMonthPayment = isCustomPayment && fullyPaidInstallmentsThisTxn >= 2;
+        if (paidBeforeDueDate || advancePayment || customMultiMonthPayment) {
+            recastRemainingSchedule(schedule, loan, paymentDate, isCustomPayment ? earlyInterestBenefit : 0.0);
         }
 
         schedule.setTotalInterest(round2(schedule.getInstallments().stream()
@@ -288,7 +328,7 @@ public class RepaymentService {
                 "Loan auto-closed after full repayment");
     }
 
-    private void recastRemainingSchedule(EMISchedule schedule, LoanApplication loan, LocalDate paymentDate) {
+    private void recastRemainingSchedule(EMISchedule schedule, LoanApplication loan, LocalDate paymentDate, double extraPrincipalReduction) {
         List<EMIInstallment> remainingInstallments = schedule.getInstallments().stream()
                 .filter(i -> i.getStatus() != EMIStatus.PAID)
                 .toList();
@@ -298,9 +338,11 @@ public class RepaymentService {
             return;
         }
 
+        // Recast from remaining principal (not total unpaid EMI), so EMI reduces correctly after prepayment.
         double outstandingPrincipal = round2(remainingInstallments.stream()
                 .mapToDouble(this::pendingPrincipal)
                 .sum());
+        outstandingPrincipal = round2(Math.max(0.0, outstandingPrincipal - round2(extraPrincipalReduction)));
 
         if (outstandingPrincipal <= 0) {
             loan.setEmi(0.0);
@@ -340,14 +382,6 @@ public class RepaymentService {
         }
 
         loan.setEmi(round2(remainingInstallments.get(0).getTotalAmount()));
-    }
-
-    private double pendingPrincipal(EMIInstallment installment) {
-        double principal = nvl(installment.getPrincipalAmount());
-        double interest = nvl(installment.getInterestAmount());
-        double paid = nvl(installment.getPaidAmount());
-        double principalPaid = Math.max(0.0, Math.min(principal, paid - interest));
-        return round2(principal - principalPaid);
     }
 
     private double nvl(Double value) {
@@ -433,6 +467,25 @@ public class RepaymentService {
         LocalDateTime baseTime = repayment.getCreatedAt() != null ? repayment.getCreatedAt() : repayment.getPaymentDate();
         if (baseTime == null) return false;
         return baseTime.plus(PENDING_TIMEOUT).isBefore(LocalDateTime.now());
+    }
+
+    private double calculatePendingAmount(EMISchedule schedule) {
+        return round2(schedule.getInstallments().stream()
+                .filter(i -> i.getStatus() != EMIStatus.PAID)
+                .mapToDouble(i -> Math.max(0.0, nvl(i.getTotalAmount()) - nvl(i.getPaidAmount())))
+                .sum());
+    }
+
+    private double pendingPrincipal(EMIInstallment installment) {
+        double principal = round2(nvl(installment.getPrincipalAmount()));
+        double interest = round2(nvl(installment.getInterestAmount()));
+        double paid = round2(nvl(installment.getPaidAmount()));
+
+        double interestPaid = Math.min(interest, paid);
+        double principalPaid = Math.max(0.0, paid - interestPaid);
+        principalPaid = Math.min(principal, principalPaid);
+
+        return round2(Math.max(0.0, principal - principalPaid));
     }
 
     public void reconcileLoanClosure(String loanId, String userId) {

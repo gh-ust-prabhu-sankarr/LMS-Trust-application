@@ -2,8 +2,10 @@ package com.trumio.lms.controller;
 
 
 import com.trumio.lms.dto.ApiResponse;
+import com.trumio.lms.dto.BankDetailsVerificationRequest;
 import com.trumio.lms.dto.LoanApplicationRequest;
 import com.trumio.lms.dto.LoanAgreementAcceptRequest;
+import com.trumio.lms.dto.LoanBankDetailsRequest;
 import com.trumio.lms.dto.LoanApprovalRequest;
 import com.trumio.lms.entity.LoanApplication;
 import com.trumio.lms.entity.enums.LoanStatus;
@@ -47,6 +49,15 @@ public class LoanApplicationController {
             @PathVariable String loanId,
             @Valid @RequestBody LoanAgreementAcceptRequest request) {
         return ResponseEntity.ok(loanApplicationService.acceptLoanAgreement(loanId, request.getAcceptedName()));
+    }
+
+    @PostMapping("/{loanId}/bank-details")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Idempotent(entityType = "LoanApplication")
+    public ResponseEntity<ApiResponse<LoanApplication>> submitBankDetails(
+            @PathVariable String loanId,
+            @Valid @RequestBody LoanBankDetailsRequest request) {
+        return ResponseEntity.ok(loanApplicationService.submitBankDetails(loanId, request));
     }
 
     @GetMapping("/my-loans")
@@ -96,5 +107,14 @@ public class LoanApplicationController {
     @Idempotent(entityType = "LoanApplication")
     public ResponseEntity<ApiResponse<LoanApplication>> disburseLoan(@PathVariable String loanId) {
         return ResponseEntity.ok(loanWorkflowService.disburseLoan(loanId));
+    }
+
+    @PostMapping("/{loanId}/bank-details/verify")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Idempotent(entityType = "LoanApplication")
+    public ResponseEntity<ApiResponse<LoanApplication>> verifyBankDetails(
+            @PathVariable String loanId,
+            @Valid @RequestBody BankDetailsVerificationRequest request) {
+        return ResponseEntity.ok(loanWorkflowService.verifyBankDetails(loanId, request));
     }
 }

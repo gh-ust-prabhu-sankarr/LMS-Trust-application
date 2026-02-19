@@ -2,6 +2,7 @@ package com.trumio.lms.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
@@ -14,5 +15,7 @@ public class StripeCheckoutSessionRequest {
     private Double amount;
     @NotBlank private String successUrl; // must contain {CHECKOUT_SESSION_ID}
     @NotBlank private String cancelUrl;
+    @Pattern(regexp = "^(INSTALLMENT|CUSTOM)?$", message = "paymentMode must be INSTALLMENT or CUSTOM")
+    private String paymentMode;
 }
 

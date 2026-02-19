@@ -1,6 +1,7 @@
 package com.trumio.lms.service;
 
 import com.trumio.lms.dto.ApiResponse;
+import com.trumio.lms.dto.LoanBankDetailsRequest;
 import com.trumio.lms.dto.LoanApplicationRequest;
 import com.trumio.lms.entity.Customer;
 import com.trumio.lms.entity.EMISchedule;
@@ -10,6 +11,7 @@ import com.trumio.lms.entity.User;
 import com.trumio.lms.entity.enums.EMIStatus;
 import com.trumio.lms.entity.enums.KYCStatus;
 import com.trumio.lms.entity.enums.LoanStatus;
+import com.trumio.lms.entity.enums.BankDetailsStatus;
 import com.trumio.lms.exception.BusinessException;
 import com.trumio.lms.exception.ErrorCode;
 import com.trumio.lms.repository.LoanApplicationRepository;
@@ -130,6 +132,7 @@ public class LoanApplicationService {
                 .emi(emi)
                 .status(LoanStatus.DRAFT)
                 .agreementAccepted(false)
+                .bankDetailsStatus(BankDetailsStatus.NOT_SUBMITTED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -234,6 +237,41 @@ public class LoanApplicationService {
                 saved.getId(), "Agreement accepted by: " + signer);
 
         return ApiResponse.success("Loan agreement accepted successfully", saved);
+    }
+
+    public ApiResponse<LoanApplication> submitBankDetails(String loanId, LoanBankDetailsRequest request) {
+        Customer customer = customerService.getCurrentCustomer();
+        LoanApplication loan = getLoanById(loanId);
+
+        if (!loan.getCustomerId().equals(customer.getId())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED_ACCESS);
+        }
+        if (loan.getStatus() != LoanStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Bank details can be submitted only for approved loans");
+        }
+        if (!Boolean.TRUE.equals(loan.getAgreementAccepted())) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "Please accept the loan agreement before submitting bank details");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        loan.setBankAccountHolderName(request.getAccountHolderName().trim());
+        loan.setBankName(request.getBankName().trim());
+        loan.setBankAccountNumber(request.getAccountNumber().trim());
+        loan.setBankIfscCode(request.getIfscCode().trim().toUpperCase());
+        loan.setBankBranchName(request.getBranchName().trim());
+        loan.setBankDetailsStatus(BankDetailsStatus.PENDING);
+        loan.setBankDetailsSubmittedAt(now);
+        loan.setBankDetailsReviewedAt(null);
+        loan.setBankDetailsReviewedBy(null);
+        loan.setBankDetailsRejectionReason(null);
+        loan.setUpdatedAt(now);
+
+        LoanApplication saved = loanApplicationRepository.save(loan);
+        auditService.log(customer.getUserId(), "BANK_DETAILS_SUBMITTED", "LOAN_APPLICATION",
+                saved.getId(), "Customer submitted loan disbursement bank details");
+        return ApiResponse.success("Bank details submitted successfully", saved);
     }
 
     private List<LoanApplication> enrichLoansWithProductNames(List<LoanApplication> loans) {

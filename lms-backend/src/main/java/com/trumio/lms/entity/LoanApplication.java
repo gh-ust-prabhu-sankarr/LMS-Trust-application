@@ -3,6 +3,7 @@ package com.trumio.lms.entity;
 
 
 import com.trumio.lms.entity.enums.LoanStatus;
+import com.trumio.lms.entity.enums.BankDetailsStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -60,6 +61,26 @@ public class LoanApplication {
     private String agreementAcceptedName;
 
     private LocalDateTime agreementAcceptedAt;
+
+    private String bankAccountHolderName;
+
+    private String bankName;
+
+    private String bankAccountNumber;
+
+    private String bankIfscCode;
+
+    private String bankBranchName;
+
+    private BankDetailsStatus bankDetailsStatus;
+
+    private String bankDetailsReviewedBy;
+
+    private String bankDetailsRejectionReason;
+
+    private LocalDateTime bankDetailsSubmittedAt;
+
+    private LocalDateTime bankDetailsReviewedAt;
 
     private List<String> documents;
 
