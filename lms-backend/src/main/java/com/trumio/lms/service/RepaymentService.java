@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -102,7 +103,8 @@ public class RepaymentService {
         return new StripeCheckoutSessionResponse(session.getId(), session.getUrl());
     }
 
-    public ApiResponse<Repayment> confirmStripeSession(String sessionId, String userId)
+    @Transactional
+    public synchronized ApiResponse<Repayment> confirmStripeSession(String sessionId, String userId)
             throws com.stripe.exception.StripeException {
 
         if (sessionId == null || sessionId.isBlank()) {
