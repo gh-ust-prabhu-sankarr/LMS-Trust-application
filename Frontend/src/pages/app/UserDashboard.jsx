@@ -1493,7 +1493,13 @@ export default function UserDashboard() {
             <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-700 mb-2">Loan Agreement</p>
             <h3 className="text-xl font-bold text-slate-900 mb-3">Accept Loan Terms</h3>
             <p className="text-sm text-slate-600 mb-5">
-              Your loan is approved. Please confirm your agreement by typing your full name.
+              This Loan Agreement is entered into between LMS (the Lender) and you (the Customer) for the approved loan product{" "}
+              <span className="font-semibold">{agreementLoan?.loanProductName || "-"}</span> with an approved amount of{" "}
+              <span className="font-semibold">{money(agreementLoan?.approvedAmount || 0)}</span>. By entering your full legal name and selecting
+              Accept Agreement, you confirm that you have read, understood, and agreed to the loan terms, including interest, repayment schedule,
+              fees, penalties, and default provisions. You authorize the Lender to proceed with post-acceptance processing and disbursement subject
+              to verification and policy checks, and you agree to repay all dues on time as per the sanctioned terms; any delay or non-payment may
+              attract additional charges and legal or recovery action as permitted under applicable law.
             </p>
             <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               Loan: <span className="font-semibold">{agreementLoan?.loanProductName || "-"}</span>
