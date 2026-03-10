@@ -2,3 +2,6 @@
 lms-backend/src/main/resources/.env
 Frontend/.env
 lms-backend/.idea/workspace.xml
+.env
+*.env
+lms-backend/src/main/resources/.env
